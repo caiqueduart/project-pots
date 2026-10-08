@@ -1,0 +1,14 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:3000
+	}
+
+	# front estático (SPA): qualquer rota desconhecida cai no index.html
+	handle {
+		root * /srv/web
+		try_files {path} /index.html
+		file_server
+	}
+}

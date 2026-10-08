@@ -1,0 +1,9 @@
+# Credenciais em LITESTREAM_ACCESS_KEY_ID e LITESTREAM_SECRET_ACCESS_KEY (.env).
+dbs:
+  - path: /data/pots.db
+    replica:
+      type: s3
+      bucket: ${LITESTREAM_BUCKET}
+      path: pots
+      endpoint: ${LITESTREAM_ENDPOINT}
+      region: ${LITESTREAM_REGION}
