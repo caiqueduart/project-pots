@@ -2,7 +2,7 @@
 
 Divida sua renda em potes, controle o limite do cartão e saiba em que parcela está cada compra.
 
-O Pots é um site estático: não tem servidor, banco na nuvem nem login. Tudo fica salvo no navegador de quem usa (IndexedDB), como o Excalidraw. Para levar os dados para outro aparelho, ou guardar uma cópia, baixe o backup em **Planejamento → Seus dados**.
+O Pots é um site estático: não tem servidor, banco na nuvem nem login. Tudo fica salvo no navegador de quem usa (IndexedDB), como o Excalidraw. Para levar os dados para outro aparelho, ou guardar uma cópia, baixe o backup em **Configurar → Seus dados**.
 
 ## Como funciona
 

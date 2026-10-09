@@ -15,7 +15,7 @@ type Tab = "mes" | "lanc" | "plan";
 const TABS: [Tab, string][] = [
   ["mes", "Visão do mês"],
   ["lanc", "Lançamentos"],
-  ["plan", "Planejamento"],
+  ["plan", "Configurar"],
 ];
 
 export function App({ store }: { store: Store }) {

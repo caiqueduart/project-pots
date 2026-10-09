@@ -44,7 +44,7 @@ export function previewPurchase(input: PurchasePreviewInput, currentMonth: Month
   };
 }
 
-/** "Falta distribuir" do Planejamento: renda − soma dos potes. */
+/** "Falta distribuir" da aba Configurar: renda − soma dos potes. */
 export function previewPlanning(input: PlanningPreviewInput): PlanningPreview {
   const income = input.incomes_cents.reduce((s, v) => s + v, 0);
   const budgeted = input.pots_cents.reduce((s, v) => s + v, 0);

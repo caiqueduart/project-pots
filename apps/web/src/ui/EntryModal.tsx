@@ -151,7 +151,7 @@ export function EntryModal({ state, current, onClose }: { state: ModalState; cur
             </button>
           </div>
           {!pots.length ? (
-            <div className="empty">Crie um pote no Planejamento antes de lançar.</div>
+            <div className="empty">Crie um pote em Configurar antes de lançar.</div>
           ) : (
             <div className="form-grid">
               {!editing && (

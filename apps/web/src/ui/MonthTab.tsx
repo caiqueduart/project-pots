@@ -52,15 +52,15 @@ function Onboarding({ onPlanning }: { onPlanning: () => void }) {
     <div className="panel onboarding">
       <h2>Bem-vindo ao Pots</h2>
       <ol>
-        <li>No Planejamento, cadastre sua renda e divida em potes (Moradia, Pessoal, Reserva…).</li>
+        <li>Em Configurar, cadastre sua renda e divida em potes (Moradia, Pessoal, Reserva…).</li>
         <li>Coloque o seu limite do cartão.</li>
         <li>Lance os fixos (aluguel, assinaturas) e as compras. Parceladas também.</li>
       </ol>
       <p className="small muted" style={{ margin: 0 }}>
-        Tudo fica salvo só neste navegador. Se já usava o Pots em outro aparelho, importe o backup no Planejamento.
+        Tudo fica salvo só neste navegador. Se já usava o Pots em outro aparelho, importe o backup em Configurar.
       </p>
       <button className="btn" onClick={onPlanning}>
-        Começar pelo Planejamento
+        Começar por Configurar
       </button>
     </div>
   );
