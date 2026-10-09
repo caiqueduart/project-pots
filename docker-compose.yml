@@ -1,5 +1,6 @@
-# Sobe tudo na VPS: docker compose up -d --build
-# Antes: copie .env.example para .env e preencha.
+# Sobe o Pots na VPS: docker compose up -d --build
+# Antes: copie .env.example para .env, crie a rede (docker network create web)
+# e suba o proxy compartilhado em deploy/proxy.
 services:
   # Na primeira subida (ou numa VPS nova), recupera o banco do backup se ele ainda não existir.
   restore:
@@ -12,6 +13,7 @@ services:
     restart: "no"
 
   api:
+    container_name: pots-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -24,6 +26,7 @@ services:
       restore:
         condition: service_completed_successfully
     restart: unless-stopped
+    networks: [default, web]
 
   # Copia o SQLite continuamente para um armazenamento S3 (Cloudflare R2, Backblaze B2...).
   litestream:
@@ -37,24 +40,10 @@ services:
       - api
     restart: unless-stopped
 
-  # HTTPS automático. Serve o front (apps/web/dist, quando existir) e repassa /api para a API.
-  caddy:
-    image: caddy:2.11.7
-    env_file: .env
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
-    volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./apps/web/dist:/srv/web:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-    restart: unless-stopped
-
 volumes:
   data:
-  caddy_data:
-  caddy_config:
+
+# Rede compartilhada com o Caddy da VPS (deploy/proxy). Crie uma vez: docker network create web
+networks:
+  web:
+    external: true

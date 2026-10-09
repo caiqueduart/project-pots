@@ -9,7 +9,7 @@ Monorepo TypeScript (pnpm workspaces):
 | `apps/api` | API em Node + Hono, login com Google (Better Auth), SQLite + Drizzle |
 | `apps/api/src/core` | todos os cálculos (parcelas, potes, cartão, previsão), funções puras com testes |
 | `packages/shared` | tipos da API, schemas zod das entradas e utilitários de mês e dinheiro, para o front reaproveitar |
-| `deploy/` | Caddy e Litestream |
+| `deploy/` | proxy Caddy compartilhado da VPS e Litestream |
 
 O front (React + Vite) entra em `apps/web` num próximo passo. Ele só apresenta: o backend entrega o mês pronto.
 
@@ -73,14 +73,22 @@ Mudou `apps/api/src/db/schema.ts`? Gere a migração com `pnpm db:generate`. As 
 
 ## Deploy na VPS
 
-1. Aponte o domínio para a VPS e instale o Docker.
-2. Clone o repositório, copie `.env.example` para `.env` e preencha tudo, inclusive o bucket do backup.
-3. `docker compose up -d --build`
+A VPS tem **um Caddy só** (`deploy/proxy`), que cuida do HTTPS de todos os apps e manda cada subdomínio para o backend certo pela rede Docker `web`. Cada app sobe só os próprios containers.
 
-O Compose sobe:
+Uma vez por VPS:
+1. Aponte `*.seudominio` (ou cada subdomínio) para a VPS e instale o Docker.
+2. `docker network create web`
+3. Em `deploy/proxy`: `BASE_DOMAIN=seudominio.com.br docker compose up -d`
+
+O Pots:
+1. Copie `.env.example` para `.env` e preencha tudo, inclusive o bucket do backup.
+2. `docker compose up -d --build`
+
+O Compose do Pots sobe:
 - `restore`: na primeira subida, recupera o banco do backup se o arquivo ainda não existir;
-- `api`: a API na porta 3000 (interna), com o SQLite no volume `data`;
-- `litestream`: copia o SQLite continuamente para o bucket S3 (Cloudflare R2, Backblaze B2...);
-- `caddy`: HTTPS automático, `/api/*` para a API e o resto para o front estático em `apps/web/dist`.
+- `pots-api`: a API, com o SQLite no volume `data`, ligada à rede `web`;
+- `litestream`: copia o SQLite continuamente para o bucket S3 (Cloudflare R2, Backblaze B2...).
+
+Para outro app, coloque o backend dele na rede `web` e adicione um bloco no `deploy/proxy/Caddyfile`.
 
 Para recuperar numa VPS nova, basta repetir os passos: o `restore` traz o banco de volta antes da API subir.
