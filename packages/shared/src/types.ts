@@ -1,5 +1,12 @@
-// Contratos da API. Todo valor de dinheiro é em centavos inteiros (campos *_cents).
+// Modelo de dados do Pots. Todo valor de dinheiro é em centavos inteiros (campos *_cents).
+// As tabelas do navegador (IndexedDB) usam exatamente estes formatos, com os mesmos nomes de campo
+// de um banco SQL, para que um backup possa alimentar um banco no futuro sem conversão.
 import type { DateKey, MonthKey } from "./month.ts";
+
+/** UUID gerado no aparelho (crypto.randomUUID). Nunca colide entre aparelhos ou pessoas. */
+export type Id = string;
+/** Instante em ISO 8601 (UTC). */
+export type Timestamp = string;
 
 export type PotKind = "gasto" | "meta";
 export type PaymentMethod = "cartao" | "debito";
@@ -11,37 +18,48 @@ export type LimitStatus = "ok" | "aviso" | "estourou";
 /** passado vem da foto do mês; atual é calculado e editável; futuro é previsão somente leitura. */
 export type MonthKind = "passado" | "atual" | "futuro";
 
-// ---------- dados brutos (o que a pessoa digita) ----------
+// ---------- linhas das tabelas (o que a pessoa digita) ----------
 
+/** Campos de controle presentes em toda linha. deleted_at marca exclusão sem apagar a linha. */
+export interface RowMeta {
+  id: Id;
+  created_at: Timestamp;
+  updated_at: Timestamp;
+  deleted_at: Timestamp | null;
+}
+
+/** Preferências e o cartão (é um só). Uma linha, com id "settings". */
 export interface Settings {
+  id: "settings";
   personal_limit_cents: number;
   bank_limit_cents: number;
   warn_pct: number;
   timezone: string;
+  /** Primeiro uso do app. Os meses antes dele não têm foto. */
+  created_at: Timestamp;
+  updated_at: Timestamp;
 }
 
-export interface Income {
-  id: number;
+export interface Income extends RowMeta {
   name: string;
   amount_cents: number;
 }
 
-export interface Pot {
-  id: number;
+export interface Pot extends RowMeta {
   name: string;
   kind: PotKind;
   amount_cents: number;
-  archived_at: string | null;
+  /** Remover um pote arquiva: compras e meses antigos continuam apontando para ele. */
+  archived_at: Timestamp | null;
 }
 
-export interface Entry {
-  id: number;
+export interface Entry extends RowMeta {
   description: string;
   total_cents: number;
   purchase_date: DateKey;
   /** Mês em que a compra foi lançada no app. Define onde cai uma compra à vista esquecida. */
   registered_month: MonthKey;
-  pot_id: number;
+  pot_id: Id;
   method: PaymentMethod;
   installments: number;
 }
@@ -49,32 +67,46 @@ export interface Entry {
 /** Ajuste de um fixo que vale só para o mês indicado (sempre o mês atual quando foi gravado). */
 export type RecurringOverride =
   | { month: MonthKey; skip: true }
-  | { month: MonthKey; amount_cents: number };
+  | {
+      month: MonthKey;
+      skip?: false;
+      description?: string;
+      amount_cents?: number;
+      day?: number;
+      pot_id?: Id;
+      method?: PaymentMethod;
+    };
 
-export interface Recurring {
-  id: number;
+export interface Recurring extends RowMeta {
   description: string;
   amount_cents: number;
   day: number;
-  pot_id: number;
+  pot_id: Id;
   method: PaymentMethod;
   override: RecurringOverride | null;
 }
 
-// ---------- mês calculado (GET /api/mes/:month) ----------
+/** Foto de um mês fechado: o MonthView calculado no fechamento. Chave = mês. */
+export interface MonthSnapshot {
+  month: MonthKey;
+  data: MonthView;
+  closed_at: Timestamp;
+}
+
+// ---------- mês calculado ----------
 
 export interface MonthLine {
   source: "recurring" | "entry";
-  id: number;
+  id: Id;
   description: string;
   date: DateKey;
-  pot_id: number;
+  pot_id: Id;
   pot_name: string;
   method: PaymentMethod;
   amount_cents: number;
   /** Fixo com ajuste neste mês. */
   edited?: boolean;
-  /** Só em compras: parcela deste mês, total de parcelas e valor total. */
+  /** Só em compras: parcela deste mês, total de parcelas, valor total e data. */
   installment?: number;
   installments?: number;
   total_cents?: number;
@@ -82,7 +114,7 @@ export interface MonthLine {
 }
 
 export interface MonthPot {
-  id: number;
+  id: Id;
   name: string;
   kind: PotKind;
   budget_cents: number;
@@ -110,7 +142,7 @@ export interface MonthTotals {
 
 export interface CardItem {
   source: "recurring" | "entry";
-  id: number;
+  id: Id;
   description: string;
   amount_cents: number;
   installment?: number;
@@ -132,9 +164,9 @@ export interface MonthCard {
 }
 
 export interface InstallmentInProgress {
-  entry_id: number;
+  entry_id: Id;
   description: string;
-  pot_id: number;
+  pot_id: Id;
   installment: number;
   installments: number;
   /** Parcela que cai neste mês. */
@@ -162,9 +194,9 @@ export interface MonthView {
   kind: MonthKind;
   editable: boolean;
   current_month: MonthKey;
-  closed_at: string | null;
-  settings: Omit<Settings, "timezone">;
-  incomes: { id: number; name: string; amount_cents: number }[];
+  closed_at: Timestamp | null;
+  settings: { personal_limit_cents: number; bank_limit_cents: number; warn_pct: number };
+  incomes: { id: Id; name: string; amount_cents: number }[];
   pots: MonthPot[];
   lines: MonthLine[];
   totals: MonthTotals;
@@ -193,8 +225,4 @@ export interface PlanningPreview {
   income_cents: number;
   budgeted_cents: number;
   unallocated_cents: number;
-}
-
-export interface ApiError {
-  error: { code: string; message: string };
 }

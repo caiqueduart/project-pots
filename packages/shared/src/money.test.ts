@@ -8,6 +8,8 @@ describe("parseCents", () => {
     expect(parseCents("75,9")).toBe(7590);
     expect(parseCents("12")).toBe(1200);
     expect(parseCents("R$ 637,15")).toBe(63715);
+    expect(parseCents("75.99")).toBe(7599);
+    expect(parseCents("1.500")).toBe(150000);
   });
   it("recusa texto que não é valor", () => {
     expect(parseCents("abc")).toBeNull();

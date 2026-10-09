@@ -1,94 +1,52 @@
 # Pots
 
-Controle financeiro pessoal: divida a renda em potes, controle o limite pessoal do cartão e saiba em que parcela está cada compra.
+Divida sua renda em potes, controle o limite do cartão e saiba em que parcela está cada compra.
 
-Monorepo TypeScript (pnpm workspaces):
+O Pots é um site estático: não tem servidor, banco na nuvem nem login. Tudo fica salvo no navegador de quem usa (IndexedDB), como o Excalidraw. Para levar os dados para outro aparelho, ou guardar uma cópia, baixe o backup em **Planejamento → Seus dados**.
 
-| pasta | o que é |
-|---|---|
-| `apps/api` | API em Node + Hono, login com Google (Better Auth), SQLite + Drizzle |
-| `apps/api/src/core` | todos os cálculos (parcelas, potes, cartão, previsão), funções puras com testes |
-| `packages/shared` | tipos da API, schemas zod das entradas e utilitários de mês e dinheiro, para o front reaproveitar |
-| `deploy/` | proxy Caddy compartilhado da VPS e Litestream |
+## Como funciona
 
-O front (React + Vite) entra em `apps/web` num próximo passo. Ele só apresenta: o backend entrega o mês pronto.
+- **Mês atual**: o único que dá para editar.
+- **Meses passados**: quando o app abre depois da virada do mês, ele tira uma foto de cada mês que fechou. A foto não muda mais, mesmo que você mexa nos potes ou nos fixos depois.
+- **Meses futuros**: previsão somente leitura, com os fixos e as parcelas já registrados.
+- **Cartão**: sem dia de fechamento ou vencimento. A compra cai na fatura do mês em que foi feita; parcelas seguem mês a mês. Uma compra antiga lançada agora só conta as parcelas a partir do mês atual.
+- **Pagamento**: Cartão ou Débito (débito cobre pix, dinheiro e débito). Só cartão parcela.
+- **Potes**: de *gasto* (o valor é um teto; avisa a partir do percentual configurado) ou de *meta* (o valor é um objetivo).
+- **Fixos**: editar ou excluir vale "só este mês" ou "deste mês em diante".
+- Nada configurável fica no código: limite pessoal, limite do banco, percentual de aviso e fuso horário ficam nas preferências.
 
-## Regras do domínio
+## Dados e backup
 
-- **Dinheiro em centavos inteiros** (`*_cents`): `150000` = R$ 1.500,00.
-- **Só o mês atual aceita mudanças.** Toda gravação vale do mês atual em diante.
-  - **Passado:** congelado. Na primeira requisição depois da virada, antes de qualquer gravação, o backend calcula o mês que fechou e guarda o resultado em `month_snapshots`. Depois disso o mês é lido só da foto.
-  - **Futuro:** previsão calculada com os valores de hoje, somente leitura.
-- **O banco guarda só o que a pessoa digita, e só o valor atual.** Parcelas, totais, uso dos potes, fatura e previsão são calculados.
-- **Cartão sem fechamento nem vencimento:** a compra cai na fatura do próprio mês. A parcela 1 é no mês da compra.
-- **Pagamento:** `cartao` ou `debito` (débito cobre pix e dinheiro). Só cartão parcela.
-- **Compra com data passada:**
-  - parcelada: a data só define em que parcela está (cadastrar algo que já está na 4/10). Parcelas de meses fechados ficam de fora.
-  - à vista: se a data é de um mês fechado, ela cai no mês atual (compra esquecida), sem mexer no mês fechado.
-  - data futura é recusada.
-- **Fixos** valem todo mês. Editar ou excluir "só este mês" grava um ajuste (`override`) do mês atual; "deste mês em diante" altera ou apaga o fixo.
-- **Potes** são `gasto` (o valor é um teto: aviso a partir de `warn_pct`, estourou acima) ou `meta` (o valor é um objetivo: pendente ou cumprida). Remover um pote arquiva.
-- **Nada configurável fica no código:** limites do cartão, faixa de aviso e fuso horário ficam em `user_settings`.
+O banco do navegador tem uma tabela por entidade, com os mesmos campos de um banco SQL: `settings`, `incomes`, `pots`, `entries`, `recurring` e `month_snapshots`.
 
-## API
+- IDs são UUID gerados no aparelho.
+- Toda linha tem `created_at`, `updated_at` e `deleted_at` (excluir só marca `deleted_at`).
+- Dinheiro em centavos inteiros (`*_cents`); meses no formato `YYYY-MM`.
 
-Tudo em `/api`, autenticado pelo cookie de sessão do Better Auth (exceto `/api/health` e `/api/auth/*`). Erros vêm como `{ "error": { "code", "message" } }`.
+O backup é um JSON com `format: "pots"`, `schema: 1` e uma lista por tabela. Cada item é uma linha pronta para virar um `INSERT` se um dia o Pots ganhar um banco de verdade. Importar um backup substitui tudo o que está no navegador.
 
-| método | rota | |
-|---|---|---|
-| GET, POST | `/api/auth/*` | login com Google (`POST /api/auth/sign-in/social` com `{ "provider": "google" }`), sessão e `POST /api/auth/sign-out` |
-| GET | `/api/me` | usuário, configurações e mês atual |
-| GET, PATCH | `/api/settings` | limite pessoal, limite do banco, `warn_pct`, `timezone` |
-| GET | `/api/mes/:YYYY-MM` | o mês pronto: linhas, totais, potes, cartão, parcelas em andamento e previsão de 6 meses (`MonthView` em `packages/shared`) |
-| GET, POST, PATCH, DELETE | `/api/incomes[/:id]` | renda |
-| GET, POST, PATCH, DELETE | `/api/pots[/:id]` | potes (`?archived=1` inclui arquivados; DELETE arquiva) |
-| GET, POST, PATCH, DELETE | `/api/entries[/:id]` | compras |
-| GET, POST | `/api/recurring` | fixos |
-| PATCH | `/api/recurring/:id` | `{ "scope": "mes", "amount_cents" \| "skip" }` ou `{ "scope": "em_diante", ...campos }` |
-| DELETE | `/api/recurring/:id?scope=mes\|em_diante` | pular só este mês ou apagar |
-| POST | `/api/previa/compra` | prévia do formulário ("10x de R$ 300,00, até jul/27") |
-| POST | `/api/previa/planejamento` | "falta distribuir" (renda − potes) |
+## Estrutura
 
-## Rodando localmente
+```
+apps/web         app React + Vite (PWA), banco do navegador com Dexie
+packages/core    cálculos do mês, parcelas, previsão e fotos dos meses (sem dependência de tela)
+packages/shared  tipos, validação (Zod) e utilitários de mês e dinheiro
+```
 
-Requer Node 22 e pnpm (`corepack enable`).
+As telas só mostram o que o `core` calcula. As regras de gravação (mês atual, data não futura, pote ativo, escopo dos fixos) ficam em `apps/web/src/db/store.ts`.
+
+## Rodando
+
+Precisa de Node 22 e pnpm 10.
 
 ```sh
 pnpm install
-cp .env.example .env   # preencha APP_URL=http://localhost:3000, o segredo e o OAuth do Google
-pnpm dev               # API em http://localhost:3000
-pnpm test              # testes do core e da API
+pnpm dev         # http://localhost:5173
+pnpm test        # Vitest em todos os pacotes
 pnpm typecheck
+pnpm build       # gera apps/web/dist
 ```
 
-Mudou `apps/api/src/db/schema.ts`? Gere a migração com `pnpm db:generate`. As migrações rodam sozinhas quando a API sobe.
+## Publicação
 
-## Login com Google
-
-1. No [Google Cloud Console](https://console.cloud.google.com), crie um projeto e configure a tela de consentimento (escopos de e-mail e perfil).
-2. Em Credenciais, crie um **ID do cliente OAuth** do tipo "Aplicativo da Web".
-   - Origem autorizada: `https://SEU_DOMINIO`
-   - URI de redirecionamento: `https://SEU_DOMINIO/api/auth/callback/google` (e `http://localhost:3000/api/auth/callback/google` para desenvolvimento)
-3. Coloque o Client ID e o Secret no `.env`.
-
-## Deploy na VPS
-
-A VPS tem **um Caddy só** (`deploy/proxy`), que cuida do HTTPS de todos os apps e manda cada subdomínio para o backend certo pela rede Docker `web`. Cada app sobe só os próprios containers.
-
-Uma vez por VPS:
-1. Aponte `*.seudominio` (ou cada subdomínio) para a VPS e instale o Docker.
-2. `docker network create web`
-3. Em `deploy/proxy`: `BASE_DOMAIN=seudominio.com.br docker compose up -d`
-
-O Pots:
-1. Copie `.env.example` para `.env` e preencha tudo, inclusive o bucket do backup.
-2. `docker compose up -d --build`
-
-O Compose do Pots sobe:
-- `restore`: na primeira subida, recupera o banco do backup se o arquivo ainda não existir;
-- `pots-api`: a API, com o SQLite no volume `data`, ligada à rede `web`;
-- `litestream`: copia o SQLite continuamente para o bucket S3 (Cloudflare R2, Backblaze B2...).
-
-Para outro app, coloque o backend dele na rede `web` e adicione um bloco no `deploy/proxy/Caddyfile`.
-
-Para recuperar numa VPS nova, basta repetir os passos: o `restore` traz o banco de volta antes da API subir.
+O workflow `.github/workflows/pages.yml` publica no GitHub Pages a cada push na `main`. Na primeira vez, ative em **Settings → Pages → Build and deployment → Source: GitHub Actions**.

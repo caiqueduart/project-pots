@@ -7,10 +7,10 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "pnpm --filter @pots/api dev",
-    "build": "pnpm -r build",
+    "dev": "pnpm --filter @pots/web dev",
+    "build": "pnpm --filter @pots/web build",
+    "preview": "pnpm --filter @pots/web preview",
     "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
-    "db:generate": "pnpm --filter @pots/api db:generate"
+    "typecheck": "pnpm -r typecheck"
   }
 }
