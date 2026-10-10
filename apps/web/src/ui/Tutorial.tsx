@@ -1,24 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
 
-// "Já viu o tutorial" fica só neste navegador (localStorage): é uma conveniência, não um dado do Pots.
-const KEY = "pots:tutorial-seen";
-
-export function tutorialSeen(): boolean {
-  try {
-    return localStorage.getItem(KEY) === "1";
-  } catch {
-    return true; // sem localStorage, não abre sozinho toda vez
-  }
-}
-
-function markSeen() {
-  try {
-    localStorage.setItem(KEY, "1");
-  } catch {
-    // sem localStorage: só volta a abrir na próxima visita
-  }
-}
-
 const STEPS: { title: string; body: ReactNode }[] = [
   {
     title: "Bem-vindo ao Pots",
@@ -73,15 +54,12 @@ const STEPS: { title: string; body: ReactNode }[] = [
   },
 ];
 
-/** Guia rápido em passos. Abre sozinho na primeira visita; o botão "?" do topo abre de novo. */
+/** Guia rápido em passos, aberto pelo botão "?" do topo. */
 export function Tutorial({ onClose }: { onClose: () => void }) {
   const [i, setI] = useState(0);
   const step = STEPS[i]!;
   const last = i === STEPS.length - 1;
-  const close = () => {
-    markSeen();
-    onClose();
-  };
+  const close = onClose;
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

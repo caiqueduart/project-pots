@@ -9,7 +9,7 @@ import { EntryModal, type ModalState } from "./ui/EntryModal.tsx";
 import { monthLabel } from "./ui/format.ts";
 import { MonthTab } from "./ui/MonthTab.tsx";
 import { PlanningTab } from "./ui/PlanningTab.tsx";
-import { Tutorial, tutorialSeen } from "./ui/Tutorial.tsx";
+import { Tutorial } from "./ui/Tutorial.tsx";
 
 type Tab = "mes" | "lanc" | "plan";
 const TABS: [Tab, string][] = [
@@ -24,7 +24,7 @@ export function App({ store }: { store: Store }) {
   const [selected, setSelected] = useState<MonthKey | null>(null);
   const [tab, setTab] = useState<Tab>("mes");
   const [modal, setModal] = useState<ModalState | null>(null);
-  const [help, setHelp] = useState(() => !tutorialSeen());
+  const [help, setHelp] = useState(false);
   const [ask, setAsk] = useState<{ req: ConfirmRequest; resolve: (id: string | null) => void } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
