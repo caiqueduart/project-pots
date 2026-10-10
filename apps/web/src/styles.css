@@ -221,6 +221,18 @@ details.invoice .table-wrap { border-top: 1px solid var(--line); max-height: 360
 .modal { width: 100%; max-width: 760px; }
 .modal .panel { background: var(--glass-strong); box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55); }
 .confirm-backdrop { z-index: 30; align-items: center; }
+.help-btn { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--fg-2); font: 600 13px/1 var(--font-body, inherit); cursor: pointer; display: grid; place-items: center; padding: 0; }
+.help-btn:hover { color: var(--fg); border-color: var(--accent); }
+.tutorial { max-width: 480px; }
+.tutorial h2 { margin: 0; }
+.tutorial-body { color: var(--fg-2); line-height: 1.55; font-size: 15px; }
+.tutorial-body p, .tutorial-body ul { margin: 0 0 10px; }
+.tutorial-body ul { padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.tutorial-body strong { color: var(--fg); }
+.tutorial-dots { display: flex; gap: 6px; justify-content: center; }
+.tutorial-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--line); }
+.tutorial-dots i.on { background: var(--accent); width: 18px; border-radius: 3px; }
+.tutorial .tutorial-skip { margin-right: auto; }
 .confirm-modal { max-width: 440px; }
 .confirm-modal h2 { margin: 0; }
 .confirm-msg { margin: 0; color: var(--fg-2); line-height: 1.5; }

@@ -9,6 +9,7 @@ import { EntryModal, type ModalState } from "./ui/EntryModal.tsx";
 import { monthLabel } from "./ui/format.ts";
 import { MonthTab } from "./ui/MonthTab.tsx";
 import { PlanningTab } from "./ui/PlanningTab.tsx";
+import { Tutorial, tutorialSeen } from "./ui/Tutorial.tsx";
 
 type Tab = "mes" | "lanc" | "plan";
 const TABS: [Tab, string][] = [
@@ -23,6 +24,7 @@ export function App({ store }: { store: Store }) {
   const [selected, setSelected] = useState<MonthKey | null>(null);
   const [tab, setTab] = useState<Tab>("mes");
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [help, setHelp] = useState(() => !tutorialSeen());
   const [ask, setAsk] = useState<{ req: ConfirmRequest; resolve: (id: string | null) => void } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -79,8 +81,8 @@ export function App({ store }: { store: Store }) {
   const ctx = useMemo<AppCtx>(() => ({ store, run, toast, confirm }), [store, run, toast, confirm]);
 
   useEffect(() => {
-    document.body.style.overflow = modal || ask ? "hidden" : "";
-  }, [modal, ask]);
+    document.body.style.overflow = modal || ask || help ? "hidden" : "";
+  }, [modal, ask, help]);
 
 
   const goMonth = (m: MonthKey) => {
@@ -96,6 +98,9 @@ export function App({ store }: { store: Store }) {
           <div className="brand-row">
             <div className="brand">
               <span className="brand-mark">R$</span>Pots
+              <button className="help-btn" aria-label="Como usar o Pots" title="Como usar o Pots" onClick={() => setHelp(true)}>
+                ?
+              </button>
             </div>
             {tab !== "plan" && (
               <div className="month-nav">
@@ -165,6 +170,7 @@ export function App({ store }: { store: Store }) {
         />
       )}
       {ask && <ConfirmDialog req={ask.req} onAnswer={answer} />}
+      {help && <Tutorial onClose={() => setHelp(false)} />}
       {toastMsg && (
         <div className="toast" role="status">
           {toastMsg}
