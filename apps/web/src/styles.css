@@ -239,7 +239,23 @@ details.invoice .table-wrap { border-top: 1px solid var(--line); max-height: 360
 .confirm-msg strong { color: var(--fg); }
 .modal-close { background: none; border: 0; color: var(--fg-2); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .modal-close:hover { color: var(--fg); background: var(--surface-2); }
-@media (max-width: 560px) { .modal-backdrop { padding-block: calc(12px + env(safe-area-inset-top, 0px)) 12px; } }
+.sheet-close { display: none; }
+/* no celular, toda janela vira bottom sheet: presa embaixo, cantos arredondados em cima e um X no topo */
+@media (max-width: 560px) {
+  .modal-backdrop, .confirm-backdrop { align-items: flex-end; padding: calc(24px + env(safe-area-inset-top, 0px)) 0 0; overflow: hidden; }
+  .modal, .confirm-modal, .tutorial { max-width: none; }
+  .modal .panel {
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top, 0px));
+    overflow-y: auto;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+    animation: sheet-up 0.22s ease-out;
+  }
+  .sheet-close { display: block; }
+}
+@keyframes sheet-up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .modal .panel { animation: none; } }
 .fab { display: none; }
 tr.group-row th:first-child { white-space: normal; }
 tr.group-row th { background: var(--tint); color: var(--fg-2); font-size: 12px; padding-block: 6px; }

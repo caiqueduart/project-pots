@@ -29,7 +29,13 @@ export function ConfirmDialog({ req, onAnswer }: { req: ConfirmRequest; onAnswer
     <div className="modal-backdrop confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onAnswer(null)}>
       <div className="modal confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle" aria-describedby="confirmMsg">
         <div className="panel">
-          <h2 id="confirmTitle">{req.title}</h2>
+          <div className="panel-head" style={{ flexWrap: "nowrap" }}>
+            <h2 id="confirmTitle">{req.title}</h2>
+            {/* no celular a janela vira bottom sheet e ganha o X; fechar nunca exclui */}
+            <button type="button" className="modal-close sheet-close" aria-label="Fechar" onClick={() => onAnswer(null)}>
+              ×
+            </button>
+          </div>
           <p id="confirmMsg" className="confirm-msg">
             {req.message}
           </p>

@@ -99,9 +99,12 @@ export function Tutorial({ onClose }: { onClose: () => void }) {
         <div className="panel">
           <div className="panel-head" style={{ flexWrap: "nowrap" }}>
             <h2 id="tutorialTitle">{step.title}</h2>
-            <span className="small muted">
+            <span className="small muted" style={{ marginLeft: "auto" }}>
               {i + 1} de {STEPS.length}
             </span>
+            <button type="button" className="modal-close sheet-close" aria-label="Fechar" onClick={close}>
+              ×
+            </button>
           </div>
           <div className="tutorial-body">{step.body}</div>
           <div className="tutorial-dots" aria-hidden="true">
