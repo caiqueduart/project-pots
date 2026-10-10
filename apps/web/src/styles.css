@@ -25,6 +25,7 @@
   --glass-strong: rgba(255, 255, 255, 0.82);
   --glass-edge: rgba(255, 255, 255, 0.75);
   --glass-shadow: 0 8px 28px -12px rgba(22, 50, 40, 0.22);
+  --scrim: rgba(8, 14, 11, 0.5);
   --blob-1: rgba(29, 107, 85, 0.26);
   --blob-2: rgba(91, 127, 174, 0.22);
   --blob-3: rgba(232, 170, 80, 0.18);
@@ -37,6 +38,7 @@
     --warn: #e9a64a; --warn-soft: #3a2b14; --crit: #f07f74; --crit-soft: #3d1f1c; --debit: #8fb0dc;
     --glass: rgba(23, 32, 28, 0.55); --glass-strong: rgba(23, 32, 28, 0.82); --glass-edge: rgba(255, 255, 255, 0.08);
     --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+    --scrim: rgba(3, 6, 5, 0.66);
     --blob-1: rgba(92, 195, 160, 0.16); --blob-2: rgba(143, 176, 220, 0.12); --blob-3: rgba(233, 166, 74, 0.08);
     color-scheme: dark;
   }
@@ -48,6 +50,7 @@
   --warn: #e9a64a; --warn-soft: #3a2b14; --crit: #f07f74; --crit-soft: #3d1f1c; --debit: #8fb0dc;
   --glass: rgba(23, 32, 28, 0.55); --glass-strong: rgba(23, 32, 28, 0.82); --glass-edge: rgba(255, 255, 255, 0.08);
   --glass-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6);
+  --scrim: rgba(3, 6, 5, 0.66);
   --blob-1: rgba(92, 195, 160, 0.16); --blob-2: rgba(143, 176, 220, 0.12); --blob-3: rgba(233, 166, 74, 0.08);
   color-scheme: dark;
 }
@@ -213,9 +216,9 @@ details.invoice .table-wrap { border-top: 1px solid var(--line); max-height: 360
 .legend-row i.inc { background: none; border-left: 2px dashed var(--fg-3); border-radius: 0; width: 0; height: 12px; }
 
 .empty { padding: 24px; text-align: center; color: var(--fg-3); border: 1px dashed var(--line); border-radius: var(--radius); }
-.modal-backdrop { position: fixed; inset: 0; z-index: 20; background: color-mix(in srgb, var(--fg) 30%, transparent); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-inline: 16px; padding-block: calc(48px + env(safe-area-inset-top, 0px)) 24px; overflow-y: auto; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 20; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-inline: 16px; padding-block: calc(48px + env(safe-area-inset-top, 0px)) 24px; overflow-y: auto; }
 .modal { width: 100%; max-width: 760px; }
-.modal .panel { background: var(--glass-strong); box-shadow: 0 18px 50px -12px color-mix(in srgb, var(--fg) 45%, transparent); }
+.modal .panel { background: var(--glass-strong); box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55); }
 .modal-close { background: none; border: 0; color: var(--fg-2); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .modal-close:hover { color: var(--fg); background: var(--surface-2); }
 @media (max-width: 560px) { .modal-backdrop { padding-block: calc(12px + env(safe-area-inset-top, 0px)) 12px; } }
