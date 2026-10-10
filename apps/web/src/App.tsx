@@ -3,7 +3,6 @@ import { addMonths, type MonthKey } from "@pots/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PotsError, type Store } from "./db/store.ts";
 import { AppContext, type AppCtx } from "./ui/app-context.ts";
-import { BackupReminder } from "./ui/BackupReminder.tsx";
 import { EntriesTab } from "./ui/EntriesTab.tsx";
 import { ConfirmDialog, type ConfirmRequest } from "./ui/ConfirmDialog.tsx";
 import { EntryModal, type ModalState } from "./ui/EntryModal.tsx";
@@ -126,7 +125,6 @@ export function App({ store }: { store: Store }) {
       </header>
 
       <main className="wrap">
-        <BackupReminder onOpen={() => setTab("plan")} />
         {tab === "mes" && (
           <MonthTab
             month={month}

@@ -2,6 +2,7 @@ import { previewPlanning, WARN_PCT } from "@pots/core";
 import { centsToInput, parseCents, type MonthKey, type PotKind } from "@pots/shared";
 import { useState, type InputHTMLAttributes } from "react";
 import { useApp } from "./app-context.ts";
+import { BackupReminder } from "./BackupReminder.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { fmt, monthLabel } from "./format.ts";
 import { useCurrentRecord } from "./hooks.ts";
@@ -86,6 +87,7 @@ export function PlanningTab({ current }: { current: MonthKey }) {
 
   return (
     <>
+      <BackupReminder />
       <p className="small muted" style={{ marginTop: 20, marginBottom: 0 }}>
         O planejamento vale de {monthLabel(current)} em diante. Os meses que já fecharam não mudam.
       </p>
