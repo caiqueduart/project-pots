@@ -1,6 +1,7 @@
 import type { Backup } from "@pots/shared";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { backupFileName, exportBackup, importBackup, parseBackup } from "../db/backup.ts";
+import { PotsError } from "../db/store.ts";
 import { useApp } from "./app-context.ts";
 import { lastBackup, markBackup, onBackupChange } from "./backup-reminder.ts";
 import { dateTime } from "./format.ts";
@@ -26,33 +27,44 @@ export async function downloadBackup(store: { db: Parameters<typeof exportBackup
 }
 
 export function DataPanel() {
-  const { store, run } = useApp();
+  const { store, run, toast, confirm } = useApp();
   const last = useLastBackup();
   const file = useRef<HTMLInputElement>(null);
-  const [pending, setPending] = useState<{ name: string; backup: Backup } | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
 
   useEffect(() => {
     void navigator.storage?.persisted?.().then(setPersisted, () => setPersisted(null));
   }, []);
 
+  const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at).length;
+
   const pick = async (f: File | undefined) => {
     if (!f) return;
     const text = await f.text();
-    await run(async () => setPending({ name: f.name, backup: parseBackup(text) }));
     if (file.current) file.current.value = "";
-  };
-
-  const confirmImport = async () => {
-    if (!pending) return;
-    const ok = await run(async () => {
-      await importBackup(store.db, pending.backup);
+    let b: Backup;
+    try {
+      b = parseBackup(text);
+    } catch (err) {
+      toast(err instanceof PotsError ? err.message : "Não deu para ler esse arquivo.");
+      return;
+    }
+    const ok = await confirm({
+      title: "Importar backup",
+      message: (
+        <>
+          Importar <strong>{f.name}</strong> apaga tudo o que está neste navegador e coloca no lugar o que está no arquivo ({alive(b.entries)} compras,{" "}
+          {alive(b.recurring)} fixos, {b.month_snapshots.length} meses fechados).
+        </>
+      ),
+      actions: [{ id: "ok", label: "Substituir" }],
+    });
+    if (!ok) return;
+    await run(async () => {
+      await importBackup(store.db, b);
       await store.closePastMonths();
     }, "Backup importado");
-    if (ok) setPending(null);
   };
-
-  const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at).length;
 
   return (
     <div className="panel">
@@ -64,8 +76,8 @@ export function DataPanel() {
         aparelho.
       </p>
       <dl className="kv">
-        <dt>Último backup</dt>
-        <dd>{last ? dateTime(last) : "nunca"}</dd>
+        <dt>Você baixou o backup pela última vez em</dt>
+        <dd>{last ? dateTime(last) : "nunca baixou"}</dd>
         {persisted != null && (
           <>
             <dt>Armazenamento protegido</dt>
@@ -73,32 +85,15 @@ export function DataPanel() {
           </>
         )}
       </dl>
-      {pending ? (
-        <div className="banner warn" style={{ marginTop: 0 }}>
-          <span>
-            Importar <strong>{pending.name}</strong> substitui tudo o que está neste navegador ({alive(pending.backup.entries)} compras,{" "}
-            {alive(pending.backup.recurring)} fixos, {pending.backup.month_snapshots.length} meses fechados).
-          </span>
-          <div className="btn-row">
-            <button className="btn ghost" onClick={() => setPending(null)}>
-              Cancelar
-            </button>
-            <button className="btn" onClick={() => void confirmImport()}>
-              Substituir
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="btn-row">
-          <button className="btn" onClick={() => void run(() => downloadBackup(store), "Backup baixado")}>
-            Baixar backup
-          </button>
-          <button className="btn ghost" onClick={() => file.current?.click()}>
-            Importar backup
-          </button>
-          <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
-        </div>
-      )}
+      <div className="btn-row">
+        <button className="btn" onClick={() => void run(() => downloadBackup(store), "Backup baixado")}>
+          Baixar backup
+        </button>
+        <button className="btn ghost" onClick={() => file.current?.click()}>
+          Importar backup
+        </button>
+        <input ref={file} type="file" accept="application/json,.json" hidden onChange={(e) => void pick(e.target.files?.[0])} />
+      </div>
     </div>
   );
 }

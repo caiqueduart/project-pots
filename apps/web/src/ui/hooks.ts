@@ -9,7 +9,7 @@ export function useMonthView(month: MonthKey, tick: number) {
   return useLiveQuery(
     async () => {
       const [view, settings] = await Promise.all([store.monthView(month), store.db.settings.get("settings")]);
-      const firstMonth = settings ? localMonth(new Date(settings.created_at), settings.timezone) : month;
+      const firstMonth = settings ? localMonth(new Date(settings.created_at)) : month;
       return { view, firstMonth };
     },
     [store, month, tick],

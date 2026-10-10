@@ -1,5 +1,4 @@
 import type { MonthKey, MonthLine } from "@pots/shared";
-import { useState } from "react";
 import { useApp } from "./app-context.ts";
 import type { ModalState } from "./EntryModal.tsx";
 import { dateShort, fmt, METHODS, monthLabel, monthName } from "./format.ts";
@@ -16,10 +15,8 @@ interface Props {
 }
 
 export function EntriesTab({ month, tick, onNew, onEdit, onGoCurrent }: Props) {
-  const { store, run } = useApp();
+  const { store, run, confirm } = useApp();
   const data = useMonthView(month, tick);
-  // linha esperando confirmação de exclusão
-  const [pending, setPending] = useState<string | null>(null);
   if (!data) return null;
   const { view, firstMonth } = data;
   if (!view) return <NoMonth firstMonth={firstMonth} onGoCurrent={onGoCurrent} />;
@@ -27,51 +24,44 @@ export function EntriesTab({ month, tick, onNew, onEdit, onGoCurrent }: Props) {
   const mName = monthName(month);
   const key = (l: MonthLine) => `${l.source}-${l.id}`;
 
+  const remove = async (l: MonthLine) => {
+    if (l.source === "recurring") {
+      const choice = await confirm({
+        title: "Excluir fixo",
+        message: (
+          <>
+            <strong>{l.description}</strong> sai só de {mName} ou de {mName} em diante? Os meses que já fecharam não mudam.
+          </>
+        ),
+        actions: [
+          { id: "mes", label: `Só ${mName}` },
+          { id: "em_diante", label: `${mName} em diante` },
+        ],
+      });
+      if (choice === "mes") await run(() => store.deleteRecurring(l.id, "mes"), `Fixo removido só de ${monthLabel(month)}`);
+      if (choice === "em_diante") await run(() => store.deleteRecurring(l.id, "em_diante"), `Fixo encerrado a partir de ${monthLabel(month)}`);
+      return;
+    }
+    const parcelas = l.installments && l.installments > 1 ? ` Todas as ${l.installments} parcelas saem junto.` : "";
+    const ok = await confirm({
+      title: "Excluir compra",
+      message: (
+        <>
+          Excluir <strong>{l.description}</strong>?{parcelas}
+        </>
+      ),
+    });
+    if (ok) await run(() => store.deleteEntry(l.id), "Compra excluída");
+  };
+
   const actions = (l: MonthLine, cls: string) => {
     if (!view.editable) return null;
-    const k = key(l);
-    if (pending === k) {
-      return (
-        <div className={`row-actions ${cls} confirm`}>
-          <span className="small muted">Excluir{l.source === "recurring" ? ":" : "?"}</span>
-          {l.source === "recurring" ? (
-            <>
-              <button
-                className="linkish small"
-                style={{ color: "var(--crit)" }}
-                onClick={() => void run(() => store.deleteRecurring(l.id, "mes"), `Fixo removido só de ${monthLabel(month)}`).then(() => setPending(null))}
-              >
-                só {mName}
-              </button>
-              <button
-                className="linkish small"
-                style={{ color: "var(--crit)" }}
-                onClick={() => void run(() => store.deleteRecurring(l.id, "em_diante"), `Fixo encerrado a partir de ${monthLabel(month)}`).then(() => setPending(null))}
-              >
-                {mName} em diante
-              </button>
-            </>
-          ) : (
-            <button
-              className="linkish small"
-              style={{ color: "var(--crit)" }}
-              onClick={() => void run(() => store.deleteEntry(l.id), "Compra excluída").then(() => setPending(null))}
-            >
-              sim, excluir
-            </button>
-          )}
-          <button className="linkish small" onClick={() => setPending(null)}>
-            cancelar
-          </button>
-        </div>
-      );
-    }
     return (
       <div className={`row-actions ${cls}`}>
         <button className="linkish small" onClick={() => onEdit({ kind: l.source === "recurring" ? "fixed" : "entry", line: l })}>
           Editar
         </button>
-        <button className="linkish small" style={{ color: "var(--crit)" }} onClick={() => setPending(k)}>
+        <button className="linkish small" style={{ color: "var(--crit)" }} onClick={() => void remove(l)}>
           Excluir
         </button>
       </div>

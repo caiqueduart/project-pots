@@ -140,6 +140,7 @@ input:focus, select:focus { border-color: var(--accent); outline: none; box-shad
 .btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); font-weight: 500; }
 .btn.ghost:hover { border-color: var(--accent); }
 .btn.danger { background: transparent; color: var(--crit); border: 1px solid var(--crit); font-weight: 500; }
+.btn.crit { background: var(--crit); color: var(--bg); }
 .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; font-weight: 500; }
 
 .form-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
@@ -219,6 +220,11 @@ details.invoice .table-wrap { border-top: 1px solid var(--line); max-height: 360
 .modal-backdrop { position: fixed; inset: 0; z-index: 20; background: var(--scrim); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-inline: 16px; padding-block: calc(48px + env(safe-area-inset-top, 0px)) 24px; overflow-y: auto; }
 .modal { width: 100%; max-width: 760px; }
 .modal .panel { background: var(--glass-strong); box-shadow: 0 18px 50px -12px rgba(0, 0, 0, 0.55); }
+.confirm-backdrop { z-index: 30; align-items: center; }
+.confirm-modal { max-width: 440px; }
+.confirm-modal h2 { margin: 0; }
+.confirm-msg { margin: 0; color: var(--fg-2); line-height: 1.5; }
+.confirm-msg strong { color: var(--fg); }
 .modal-close { background: none; border: 0; color: var(--fg-2); font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .modal-close:hover { color: var(--fg); background: var(--surface-2); }
 @media (max-width: 560px) { .modal-backdrop { padding-block: calc(12px + env(safe-area-inset-top, 0px)) 12px; } }

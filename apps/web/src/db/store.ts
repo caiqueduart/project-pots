@@ -5,6 +5,7 @@ import {
   localDate,
   localMonth,
   monthsToClose,
+  TIME_ZONE,
   type UserData,
 } from "@pots/core";
 import {
@@ -33,16 +34,6 @@ import type { PotsDB } from "./db.ts";
 export class PotsError extends Error {}
 
 export type Clock = () => Date;
-
-const DEFAULT_TZ = "America/Sao_Paulo";
-
-function browserTimeZone(): string {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TZ;
-  } catch {
-    return DEFAULT_TZ;
-  }
-}
 
 function parse<T>(schema: ZodType<T>, input: unknown): T {
   const r = schema.safeParse(input);
@@ -83,7 +74,7 @@ export class Store {
       personal_limit_cents: 0,
       bank_limit_cents: 0,
       warn_pct: 85,
-      timezone: browserTimeZone(),
+      timezone: TIME_ZONE,
       created_at: t,
       updated_at: t,
     };
@@ -91,12 +82,13 @@ export class Store {
     return fresh;
   }
 
-  currentMonth(settings: Settings): MonthKey {
-    return localMonth(this.now(), settings.timezone);
+  /** Mês atual no horário de Brasília. */
+  currentMonth(): MonthKey {
+    return localMonth(this.now());
   }
 
-  today(settings: Settings): string {
-    return localDate(this.now(), settings.timezone);
+  today(): string {
+    return localDate(this.now());
   }
 
   async userData(): Promise<UserData> {
@@ -122,8 +114,7 @@ export class Store {
    * Atual: calculado e editável. Futuro: previsão somente leitura.
    */
   async monthView(month: MonthKey): Promise<MonthView | null> {
-    const settings = await this.settings();
-    const current = this.currentMonth(settings);
+    const current = this.currentMonth();
     if (month < current) {
       const snap = await this.db.month_snapshots.get(month);
       return snap ? { ...snap.data, current_month: current } : null;
@@ -141,9 +132,9 @@ export class Store {
   async closePastMonths(): Promise<number> {
     return this.db.transaction("rw", [this.db.settings, this.db.incomes, this.db.pots, this.db.entries, this.db.recurring, this.db.month_snapshots], async () => {
       const settings = await this.settings();
-      const current = this.currentMonth(settings);
+      const current = this.currentMonth();
       const last = await this.db.month_snapshots.orderBy("month").last();
-      const months = monthsToClose(localMonth(new Date(settings.created_at), settings.timezone), last?.month ?? null, current);
+      const months = monthsToClose(localMonth(new Date(settings.created_at)), last?.month ?? null, current);
       if (!months.length) return 0;
       const snaps = closeMonths(await this.userData(), months, current, this.now());
       await this.db.month_snapshots.bulkPut(snaps);
@@ -156,7 +147,7 @@ export class Store {
     await this.closePastMonths();
     return this.db.transaction("rw", [this.db.settings, this.db.incomes, this.db.pots, this.db.entries, this.db.recurring], async () => {
       const settings = await this.settings();
-      return fn({ settings, current: this.currentMonth(settings), today: this.today(settings) });
+      return fn({ settings, current: this.currentMonth(), today: this.today() });
     });
   }
 

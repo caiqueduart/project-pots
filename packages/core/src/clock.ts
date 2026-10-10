@@ -1,7 +1,10 @@
 import type { DateKey, MonthKey } from "@pots/shared";
 
-/** Data local (YYYY-MM-DD) de um instante no fuso do usuário. */
-export function localDate(now: Date, timeZone: string): DateKey {
+/** O Pots usa sempre o horário de Brasília: é ele que define quando o dia e o mês viram. */
+export const TIME_ZONE = "America/Sao_Paulo";
+
+/** Data (YYYY-MM-DD) de um instante no horário de Brasília. */
+export function localDate(now: Date, timeZone = TIME_ZONE): DateKey {
   // en-CA formata como YYYY-MM-DD
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -11,6 +14,6 @@ export function localDate(now: Date, timeZone: string): DateKey {
   }).format(now);
 }
 
-export function localMonth(now: Date, timeZone: string): MonthKey {
+export function localMonth(now: Date, timeZone = TIME_ZONE): MonthKey {
   return localDate(now, timeZone).slice(0, 7);
 }

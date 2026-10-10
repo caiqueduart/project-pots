@@ -169,11 +169,13 @@ describe("virada do mês", () => {
     expect(await store.closePastMonths()).toBe(0);
   });
 
-  it("usa o fuso da pessoa para saber o mês atual", async () => {
-    clock = new Date("2026-11-01T02:00:00Z"); // ainda 31/out às 23h em São Paulo
-    expect(store.currentMonth(await store.settings())).toBe("2026-10");
-    await store.updateSettings({ timezone: "UTC" });
-    expect(store.currentMonth(await store.settings())).toBe("2026-11");
+  it("usa sempre o horário de Brasília para saber o mês atual", async () => {
+    clock = new Date("2026-11-01T02:00:00Z"); // ainda 31/out às 23h em Brasília
+    expect(store.currentMonth()).toBe("2026-10");
+    await store.updateSettings({ timezone: "UTC" }); // backups antigos podem trazer outro fuso
+    expect(store.currentMonth()).toBe("2026-10");
+    clock = new Date("2026-11-01T03:00:00Z");
+    expect(store.currentMonth()).toBe("2026-11");
   });
 });
 

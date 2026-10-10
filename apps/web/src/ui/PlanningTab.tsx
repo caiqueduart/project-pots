@@ -1,7 +1,7 @@
 import { previewPlanning } from "@pots/core";
-import { centsToInput, isTimeZone, parseCents, type MonthKey, type PotKind } from "@pots/shared";
+import { centsToInput, parseCents, type MonthKey, type PotKind } from "@pots/shared";
 import { useLiveQuery } from "dexie-react-hooks";
-import { useMemo, useState, type InputHTMLAttributes } from "react";
+import { useState, type InputHTMLAttributes } from "react";
 import { useApp } from "./app-context.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { fmt, monthLabel } from "./format.ts";
@@ -47,18 +47,11 @@ function CommitInput({
 }
 
 export function PlanningTab({ current }: { current: MonthKey }) {
-  const { store, run, toast } = useApp();
+  const { store, run, toast, confirm } = useApp();
   const data = useUserData();
   const settings = useLiveQuery(() => store.db.settings.get("settings"), [store]);
   // valores digitados e ainda não gravados, para o "Falta distribuir" acompanhar a digitação
   const [live, setLive] = useState<Record<string, number>>({});
-  const zones = useMemo(() => {
-    try {
-      return Intl.supportedValuesOf("timeZone");
-    } catch {
-      return [];
-    }
-  }, []);
 
   if (!data || !settings) return null;
   const pots = data.pots.filter((p) => !p.archived_at);
@@ -129,7 +122,18 @@ export function PlanningTab({ current }: { current: MonthKey }) {
                       className="linkish small pf-del"
                       style={{ color: "var(--crit)" }}
                       aria-label={`Remover ${i.name}`}
-                      onClick={() => void run(() => store.deleteIncome(i.id), "Fonte removida")}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Remover fonte de renda",
+                          message: (
+                            <>
+                              Remover <strong>{i.name}</strong> da sua renda? Os meses que já fecharam não mudam.
+                            </>
+                          ),
+                          actions: [{ id: "ok", label: "Remover" }],
+                        });
+                        if (ok) await run(() => store.deleteIncome(i.id), "Fonte removida");
+                      }}
                     >
                       Remover
                     </button>
@@ -202,7 +206,19 @@ export function PlanningTab({ current }: { current: MonthKey }) {
                     className="linkish small pf-del"
                     style={{ color: "var(--crit)" }}
                     aria-label={`Remover ${p.name}`}
-                    onClick={() => void run(() => store.archivePot(p.id), "Pote removido")}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: "Remover pote",
+                        message: (
+                          <>
+                            Remover o pote <strong>{p.name}</strong>? Ele some do planejamento, mas as compras antigas e os meses fechados continuam
+                            com ele.
+                          </>
+                        ),
+                        actions: [{ id: "ok", label: "Remover" }],
+                      });
+                      if (ok) await run(() => store.archivePot(p.id), "Pote removido");
+                    }}
                   >
                     Remover
                   </button>
@@ -258,39 +274,6 @@ export function PlanningTab({ current }: { current: MonthKey }) {
             <p className="small muted" style={{ margin: 0 }}>
               Compras no cartão entram na fatura do mês em que foram feitas.
             </p>
-          </div>
-
-          <div className="panel">
-            <div className="panel-head">
-              <h2>Preferências</h2>
-            </div>
-            <div className="form-grid">
-              <div className="field span-3">
-                <label htmlFor="p-warn">Avisar a partir de (%)</label>
-                <CommitInput
-                  id="p-warn"
-                  inputMode="numeric"
-                  value={String(settings.warn_pct)}
-                  onCommit={(v) => run(() => store.updateSettings({ warn_pct: Math.round(Number(v)) }))}
-                />
-                <span className="hint">Potes, cartão e fixos ficam amarelos a partir daqui.</span>
-              </div>
-              <div className="field span-3">
-                <label htmlFor="p-tz">Fuso horário</label>
-                <select
-                  id="p-tz"
-                  value={settings.timezone}
-                  onChange={(e) => isTimeZone(e.target.value) && void run(() => store.updateSettings({ timezone: e.target.value }), "Fuso atualizado")}
-                >
-                  {(zones.includes(settings.timezone) ? zones : [settings.timezone, ...zones]).map((z) => (
-                    <option key={z} value={z}>
-                      {z.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-                <span className="hint">Define quando o mês vira.</span>
-              </div>
-            </div>
           </div>
 
           <DataPanel />

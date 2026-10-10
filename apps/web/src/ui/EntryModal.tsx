@@ -18,7 +18,15 @@ interface Draft {
   installments: string;
 }
 
-export function EntryModal({ state, current, onClose }: { state: ModalState; current: MonthKey; onClose: () => void }) {
+interface Props {
+  state: ModalState;
+  current: MonthKey;
+  onClose: () => void;
+  /** Fecha e abre a aba Configurar (quando ainda não há potes). */
+  onConfigure: () => void;
+}
+
+export function EntryModal({ state, current, onClose, onConfigure }: Props) {
   const { store, run, toast } = useApp();
   const pots = useLiveQuery(() => store.userData().then((d) => d.pots.filter((p) => !p.archived_at)), [store]);
   const settings = useLiveQuery(() => store.db.settings.get("settings"), [store]);
@@ -29,7 +37,7 @@ export function EntryModal({ state, current, onClose }: { state: ModalState; cur
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const firstInput = useRef<HTMLInputElement>(null);
-  const today = settings ? localDate(new Date(), settings.timezone) : "";
+  const today = settings ? localDate(new Date()) : "";
 
   // preenche o formulário uma vez, quando os dados chegam
   useEffect(() => {
@@ -151,7 +159,14 @@ export function EntryModal({ state, current, onClose }: { state: ModalState; cur
             </button>
           </div>
           {!pots.length ? (
-            <div className="empty">Crie um pote em Configurar antes de lançar.</div>
+            <div className="empty">
+              Crie um pote em Configurar antes de lançar.
+              <div style={{ marginTop: 12 }}>
+                <button type="button" className="btn" onClick={onConfigure}>
+                  Ir para Configurar
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="form-grid">
               {!editing && (

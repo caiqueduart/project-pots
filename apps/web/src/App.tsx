@@ -6,6 +6,7 @@ import { PotsError, type Store } from "./db/store.ts";
 import { AppContext, type AppCtx } from "./ui/app-context.ts";
 import { BackupReminder } from "./ui/BackupReminder.tsx";
 import { EntriesTab } from "./ui/EntriesTab.tsx";
+import { ConfirmDialog, type ConfirmRequest } from "./ui/ConfirmDialog.tsx";
 import { EntryModal, type ModalState } from "./ui/EntryModal.tsx";
 import { monthLabel } from "./ui/format.ts";
 import { MonthTab } from "./ui/MonthTab.tsx";
@@ -25,6 +26,7 @@ export function App({ store }: { store: Store }) {
   const [selected, setSelected] = useState<MonthKey | null>(null);
   const [tab, setTab] = useState<Tab>("mes");
   const [modal, setModal] = useState<ModalState | null>(null);
+  const [ask, setAsk] = useState<{ req: ConfirmRequest; resolve: (id: string | null) => void } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const toastTimer = useRef<number | undefined>(undefined);
 
@@ -38,7 +40,7 @@ export function App({ store }: { store: Store }) {
   }, [store]);
 
   const current = useMemo(
-    () => (settings ? localMonth(new Date(), settings.timezone) : null),
+    () => (settings ? localMonth(new Date()) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [settings, tick],
   );
@@ -68,11 +70,20 @@ export function App({ store }: { store: Store }) {
     [toast],
   );
 
-  const ctx = useMemo<AppCtx>(() => ({ store, run, toast }), [store, run, toast]);
+  const confirm = useCallback<AppCtx["confirm"]>((req) => new Promise((resolve) => setAsk({ req, resolve })), []);
+  const answer = useCallback(
+    (id: string | null) => {
+      ask?.resolve(id);
+      setAsk(null);
+    },
+    [ask],
+  );
+
+  const ctx = useMemo<AppCtx>(() => ({ store, run, toast, confirm }), [store, run, toast, confirm]);
 
   useEffect(() => {
-    document.body.style.overflow = modal ? "hidden" : "";
-  }, [modal]);
+    document.body.style.overflow = modal || ask ? "hidden" : "";
+  }, [modal, ask]);
 
   if (!settings || !current || !month) return null;
 
@@ -147,7 +158,18 @@ export function App({ store }: { store: Store }) {
           +
         </button>
       )}
-      {modal && <EntryModal state={modal} current={current} onClose={() => setModal(null)} />}
+      {modal && (
+        <EntryModal
+          state={modal}
+          current={current}
+          onClose={() => setModal(null)}
+          onConfigure={() => {
+            setModal(null);
+            setTab("plan");
+          }}
+        />
+      )}
+      {ask && <ConfirmDialog req={ask.req} onAnswer={answer} />}
       {toastMsg && (
         <div className="toast" role="status">
           {toastMsg}
