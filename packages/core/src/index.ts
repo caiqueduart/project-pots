@@ -1,7 +1,7 @@
 export * from "./clock.ts";
 export * from "./compute-month.ts";
 export * from "./installments.ts";
+export * from "./months.ts";
 export * from "./preview.ts";
-export * from "./snapshots.ts";
 export * from "./status.ts";
 export type * from "./types.ts";

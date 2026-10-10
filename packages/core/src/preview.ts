@@ -1,4 +1,4 @@
-import type { DateKey, Entry, MonthKey, PaymentMethod, PlanningPreview, PurchasePreview } from "@pots/shared";
+import type { DateKey, MonthKey, PaymentMethod, PlanningPreview, PurchasePreview } from "@pots/shared";
 
 export interface PurchasePreviewInput {
   total_cents: number;
@@ -12,15 +12,13 @@ export interface PlanningPreviewInput {
   pots_cents: number[];
 }
 import { entryInMonth, entrySchedule, installmentCents, remainingAfter } from "./installments.ts";
+import type { CalcEntry } from "./types.ts";
 
 /** Prévia do formulário de compra ("10x de R$ 300,00, até jul/27"), como se fosse lançada agora. */
 export function previewPurchase(input: PurchasePreviewInput, currentMonth: MonthKey): PurchasePreview {
   const n = input.method === "cartao" ? input.installments : 1;
-  const entry: Entry = {
+  const entry: CalcEntry = {
     id: "",
-    created_at: "",
-    updated_at: "",
-    deleted_at: null,
     description: "",
     total_cents: input.total_cents,
     purchase_date: input.purchase_date,
@@ -28,6 +26,7 @@ export function previewPurchase(input: PurchasePreviewInput, currentMonth: Month
     pot_id: "",
     method: input.method,
     installments: n,
+    stopped_month: null,
   };
   const sched = entrySchedule(entry);
   const now = entryInMonth(entry, currentMonth);

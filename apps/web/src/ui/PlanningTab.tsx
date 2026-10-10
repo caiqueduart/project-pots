@@ -1,11 +1,10 @@
-import { previewPlanning } from "@pots/core";
+import { previewPlanning, WARN_PCT } from "@pots/core";
 import { centsToInput, parseCents, type MonthKey, type PotKind } from "@pots/shared";
-import { useLiveQuery } from "dexie-react-hooks";
 import { useState, type InputHTMLAttributes } from "react";
 import { useApp } from "./app-context.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { fmt, monthLabel } from "./format.ts";
-import { useUserData } from "./hooks.ts";
+import { useCurrentRecord } from "./hooks.ts";
 
 /** Campo de texto que grava ao sair (blur) ou com Enter. Volta ao valor salvo se a gravação falhar. */
 function CommitInput({
@@ -48,15 +47,14 @@ function CommitInput({
 
 export function PlanningTab({ current }: { current: MonthKey }) {
   const { store, run, toast, confirm } = useApp();
-  const data = useUserData();
-  const settings = useLiveQuery(() => store.db.settings.get("settings"), [store]);
+  const record = useCurrentRecord();
   // valores digitados e ainda não gravados, para o "Falta distribuir" acompanhar a digitação
   const [live, setLive] = useState<Record<string, number>>({});
 
-  if (!data || !settings) return null;
-  const pots = data.pots.filter((p) => !p.archived_at);
+  if (!record) return null;
+  const { incomes, pots, card } = record.plan;
   const dist = previewPlanning({
-    incomes_cents: data.incomes.map((i) => live[i.id] ?? i.amount_cents),
+    incomes_cents: incomes.map((i) => live[i.id] ?? i.amount_cents),
     pots_cents: pots.map((p) => live[p.id] ?? p.amount_cents),
   });
   const rest = dist.unallocated_cents;
@@ -101,8 +99,8 @@ export function PlanningTab({ current }: { current: MonthKey }) {
               </button>
             </div>
             <div className="edit-list">
-              {data.incomes.length ? (
-                data.incomes.map((i) => (
+              {incomes.length ? (
+                incomes.map((i) => (
                   <div className="edit-row inc-row" key={i.id}>
                     <label className="pf pf-name">
                       <span className="pf-l">Fonte</span>
@@ -217,7 +215,7 @@ export function PlanningTab({ current }: { current: MonthKey }) {
                         ),
                         actions: [{ id: "ok", label: "Remover" }],
                       });
-                      if (ok) await run(() => store.archivePot(p.id), "Pote removido");
+                      if (ok) await run(() => store.removePot(p.id), "Pote removido");
                     }}
                   >
                     Remover
@@ -228,7 +226,7 @@ export function PlanningTab({ current }: { current: MonthKey }) {
             <dl className="kind-help">
               <div>
                 <dt>Gasto</dt>
-                <dd>O valor é um teto. Avisa a partir de {settings.warn_pct}% e quando passa.</dd>
+                <dd>O valor é um teto. Avisa a partir de {WARN_PCT}% e quando passa.</dd>
               </div>
               <div>
                 <dt>Meta</dt>
@@ -249,10 +247,10 @@ export function PlanningTab({ current }: { current: MonthKey }) {
                 <CommitInput
                   id="c-pl"
                   money
-                  value={centsToInput(settings.personal_limit_cents)}
+                  value={centsToInput(card.personal_limit_cents)}
                   onCommit={async (v) => {
                     const c = money(v);
-                    return c != null && run(() => store.updateSettings({ personal_limit_cents: c }));
+                    return c != null && run(() => store.updateCard({ personal_limit_cents: c }));
                   }}
                 />
                 <span className="hint">Quanto você realmente pode usar no crédito por mês.</span>
@@ -262,10 +260,10 @@ export function PlanningTab({ current }: { current: MonthKey }) {
                 <CommitInput
                   id="c-bl"
                   money
-                  value={centsToInput(settings.bank_limit_cents)}
+                  value={centsToInput(card.bank_limit_cents)}
                   onCommit={async (v) => {
                     const c = money(v);
-                    return c != null && run(() => store.updateSettings({ bank_limit_cents: c }));
+                    return c != null && run(() => store.updateCard({ bank_limit_cents: c }));
                   }}
                 />
                 <span className="hint">O limite total que o banco te dá.</span>

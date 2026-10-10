@@ -36,8 +36,6 @@ export function DataPanel() {
     void navigator.storage?.persisted?.().then(setPersisted, () => setPersisted(null));
   }, []);
 
-  const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at).length;
-
   const pick = async (f: File | undefined) => {
     if (!f) return;
     const text = await f.text();
@@ -53,8 +51,8 @@ export function DataPanel() {
       title: "Importar backup",
       message: (
         <>
-          Importar <strong>{f.name}</strong> apaga tudo o que está neste navegador e coloca no lugar o que está no arquivo ({alive(b.entries)} compras,{" "}
-          {alive(b.recurring)} fixos, {b.month_snapshots.length} meses fechados).
+          Importar <strong>{f.name}</strong> apaga tudo o que está neste navegador e coloca no lugar o que está no arquivo ({b.months.length} {b.months.length === 1 ? "mês" : "meses"}, {b.months.reduce((s, m) => s + m.entries.length, 0)} compras,{" "}
+          {b.global.fixed.length} fixos).
         </>
       ),
       actions: [{ id: "ok", label: "Substituir" }],

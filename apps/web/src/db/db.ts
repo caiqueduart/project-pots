@@ -1,21 +1,17 @@
-import type { Entry, Income, MonthSnapshot, Pot, Recurring, Settings } from "@pots/shared";
+import type { Global, MonthRecord } from "@pots/shared";
 import Dexie, { type Table } from "dexie";
 
 /**
- * Banco do navegador (IndexedDB). Uma tabela por tabela da modelagem, com os mesmos campos de um
- * banco SQL: um backup exportado daqui alimenta um banco no futuro, linha por linha.
+ * Banco do navegador (IndexedDB), no mesmo formato do backup: um registro por mês e um com o que vale
+ * para todos os meses.
  */
 export class PotsDB extends Dexie {
-  settings!: Table<Settings, "settings">;
-  incomes!: Table<Income, string>;
-  pots!: Table<Pot, string>;
-  entries!: Table<Entry, string>;
-  recurring!: Table<Recurring, string>;
-  month_snapshots!: Table<MonthSnapshot, string>;
+  months!: Table<MonthRecord, string>;
+  global!: Table<Global, "global">;
 
   constructor(name = "pots") {
     super(name);
-    // Mudou o formato? Crie version(2) com .upgrade(); nunca altere a version(1).
+    // Mudou o formato? Crie uma versão nova com .upgrade(); nunca altere as anteriores.
     this.version(1).stores({
       settings: "id",
       incomes: "id, updated_at",
@@ -24,7 +20,16 @@ export class PotsDB extends Dexie {
       recurring: "id, updated_at",
       month_snapshots: "month",
     });
+    // v2: dados por mês. O formato da v1 nunca foi para produção, então as tabelas antigas são descartadas.
+    this.version(2).stores({
+      settings: null,
+      incomes: null,
+      pots: null,
+      entries: null,
+      recurring: null,
+      month_snapshots: null,
+      months: "month",
+      global: "id",
+    });
   }
 }
-
-export const DATA_TABLES = ["settings", "incomes", "pots", "entries", "recurring", "month_snapshots"] as const;

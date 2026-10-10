@@ -1,46 +1,45 @@
-import type { Entry, Recurring, RowMeta } from "@pots/shared";
-import type { UserData } from "./types.ts";
+import type { Entry, Fixed, MonthRecord } from "@pots/shared";
+import type { PotsData } from "./types.ts";
 
 // Outubro/2026 real do Caique (planilha), o mesmo usado no protótipo.
 export const MORADIA = "pot-moradia";
 export const PESSOAL = "pot-pessoal";
 export const INVEST = "pot-invest";
 
-const T = "2026-10-01T12:00:00.000Z";
-const meta = (id: string): RowMeta => ({ id, created_at: T, updated_at: T, deleted_at: null });
-
 let n = 0;
-const fx = (description: string, amount_cents: number, pot_id: string, method: Recurring["method"]): Recurring => ({
-  ...meta(`rec-${++n}`),
+const fx = (description: string, amount_cents: number, pot_id: string, method: Fixed["method"]): Fixed => ({
+  id: `rec-${++n}`,
   description,
   amount_cents,
   day: 1,
   pot_id,
   method,
-  override: null,
 });
 const parc = (description: string, parcela: number, purchase_date: string, installments: number): Entry => ({
-  ...meta(`entry-${++n}`),
+  id: `entry-${++n}`,
   description,
   total_cents: parcela * installments,
   purchase_date,
-  registered_month: "2026-10",
   pot_id: PESSOAL,
   method: "cartao",
   installments,
 });
 
-export function octoberData(): UserData {
+export function octoberRecord(): MonthRecord {
   n = 0;
   return {
-    settings: { personal_limit_cents: 100000, bank_limit_cents: 500000, warn_pct: 85 },
-    incomes: [{ ...meta("inc-1"), name: "Bolsa LabTIME", amount_cents: 350000 }],
-    pots: [
-      { ...meta(MORADIA), name: "Moradia", kind: "gasto", amount_cents: 50000, archived_at: null },
-      { ...meta(PESSOAL), name: "Pessoal", kind: "gasto", amount_cents: 150000, archived_at: null },
-      { ...meta(INVEST), name: "Investimentos", kind: "meta", amount_cents: 100000, archived_at: null },
-    ],
-    recurring: [
+    month: "2026-10",
+    closed_at: null,
+    plan: {
+      incomes: [{ id: "inc-1", name: "Bolsa LabTIME", amount_cents: 350000 }],
+      pots: [
+        { id: MORADIA, name: "Moradia", kind: "gasto", amount_cents: 50000 },
+        { id: PESSOAL, name: "Pessoal", kind: "gasto", amount_cents: 150000 },
+        { id: INVEST, name: "Investimentos", kind: "meta", amount_cents: 100000 },
+      ],
+      card: { personal_limit_cents: 100000, bank_limit_cents: 500000 },
+    },
+    fixed: [
       fx("Aluguel", 34500, MORADIA, "debito"),
       fx("Água, Luz, Internet", 16000, MORADIA, "debito"),
       fx("Internet da família", 10500, PESSOAL, "debito"),
@@ -62,15 +61,21 @@ export function octoberData(): UserData {
       parc("Creme e Perfume", 9234, "2026-09-01", 2),
       parc("Fone de ouvido", 8278, "2026-06-01", 8),
       {
-        ...meta(`entry-${++n}`),
+        id: `entry-${++n}`,
         description: "Corte de Cabelo",
         total_cents: 4000,
         purchase_date: "2026-10-01",
-        registered_month: "2026-10",
         pot_id: PESSOAL,
         method: "debito",
         installments: 1,
       },
     ],
+    stopped_entries: [],
   };
+}
+
+/** Só outubro, aberto. Os fixos do mês são também o modelo para os próximos. */
+export function octoberData(): PotsData {
+  const oct = octoberRecord();
+  return { months: [oct], global: { id: "global", fixed: structuredClone(oct.fixed) } };
 }

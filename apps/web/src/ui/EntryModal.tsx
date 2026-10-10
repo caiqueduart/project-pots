@@ -28,20 +28,17 @@ interface Props {
 
 export function EntryModal({ state, current, onClose, onConfigure }: Props) {
   const { store, run, toast } = useApp();
-  const pots = useLiveQuery(() => store.userData().then((d) => d.pots.filter((p) => !p.archived_at)), [store]);
-  const settings = useLiveQuery(() => store.db.settings.get("settings"), [store]);
-  const entry = useLiveQuery(
-    async () => (state.kind === "entry" ? await store.db.entries.get(state.line.id) : undefined),
-    [store, state],
-  );
+  const record = useLiveQuery(() => store.currentRecord(), [store]);
+  const pots = record?.plan.pots;
+  const entry = state.kind === "entry" ? record?.entries.find((e) => e.id === state.line.id) : undefined;
   const [draft, setDraft] = useState<Draft | null>(null);
   const [busy, setBusy] = useState(false);
   const firstInput = useRef<HTMLInputElement>(null);
-  const today = settings ? localDate(new Date()) : "";
+  const today = localDate(new Date());
 
   // preenche o formulário uma vez, quando os dados chegam
   useEffect(() => {
-    if (draft || !pots || !settings || (state.kind === "entry" && !entry)) return;
+    if (draft || !pots || (state.kind === "entry" && !entry)) return;
     const base: Draft = {
       type: "compra",
       description: "",
@@ -74,7 +71,7 @@ export function EntryModal({ state, current, onClose, onConfigure }: Props) {
         method: l.method,
       });
     } else setDraft(base);
-  }, [draft, pots, settings, entry, state, today]);
+  }, [draft, pots, entry, state, today]);
 
   useEffect(() => {
     if (draft) firstInput.current?.focus();

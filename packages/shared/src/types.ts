@@ -1,6 +1,5 @@
 // Modelo de dados do Pots. Todo valor de dinheiro é em centavos inteiros (campos *_cents).
-// As tabelas do navegador (IndexedDB) usam exatamente estes formatos, com os mesmos nomes de campo
-// de um banco SQL, para que um backup possa alimentar um banco no futuro sem conversão.
+// O navegador (IndexedDB) e o arquivo de backup usam exatamente estes formatos.
 import type { DateKey, MonthKey } from "./month.ts";
 
 /** UUID gerado no aparelho (crypto.randomUUID). Nunca colide entre aparelhos ou pessoas. */
@@ -15,82 +14,79 @@ export type PaymentMethod = "cartao" | "debito";
 export type PotStatus = "ok" | "aviso" | "estourou" | "pendente" | "cumprida";
 export type LimitStatus = "ok" | "aviso" | "estourou";
 
-/** passado vem da foto do mês; atual é calculado e editável; futuro é previsão somente leitura. */
+/** passado é um mês fechado; atual é editável; futuro é previsão somente leitura. */
 export type MonthKind = "passado" | "atual" | "futuro";
 
-// ---------- linhas das tabelas (o que a pessoa digita) ----------
+// ---------- o que a pessoa digita ----------
+// Cada mês guarda o próprio plano, os fixos e as compras lançadas nele. Um mês fechado não muda mais.
+// Não há exclusão "de mentira": no mês aberto, apagar tira o item da lista.
 
-/** Campos de controle presentes em toda linha. deleted_at marca exclusão sem apagar a linha. */
-export interface RowMeta {
+export interface Income {
   id: Id;
-  created_at: Timestamp;
-  updated_at: Timestamp;
-  deleted_at: Timestamp | null;
-}
-
-/** Preferências e o cartão (é um só). Uma linha, com id "settings". */
-export interface Settings {
-  id: "settings";
-  personal_limit_cents: number;
-  bank_limit_cents: number;
-  warn_pct: number;
-  timezone: string;
-  /** Primeiro uso do app. Os meses antes dele não têm foto. */
-  created_at: Timestamp;
-  updated_at: Timestamp;
-}
-
-export interface Income extends RowMeta {
   name: string;
   amount_cents: number;
 }
 
-export interface Pot extends RowMeta {
+export interface Pot {
+  id: Id;
   name: string;
   kind: PotKind;
   amount_cents: number;
-  /** Remover um pote arquiva: compras e meses antigos continuam apontando para ele. */
-  archived_at: Timestamp | null;
 }
 
-export interface Entry extends RowMeta {
-  description: string;
-  total_cents: number;
-  purchase_date: DateKey;
-  /** Mês em que a compra foi lançada no app. Define onde cai uma compra à vista esquecida. */
-  registered_month: MonthKey;
-  pot_id: Id;
-  method: PaymentMethod;
-  installments: number;
+export interface CardPlan {
+  personal_limit_cents: number;
+  bank_limit_cents: number;
 }
 
-/** Ajuste de um fixo que vale só para o mês indicado (sempre o mês atual quando foi gravado). */
-export type RecurringOverride =
-  | { month: MonthKey; skip: true }
-  | {
-      month: MonthKey;
-      skip?: false;
-      description?: string;
-      amount_cents?: number;
-      day?: number;
-      pot_id?: Id;
-      method?: PaymentMethod;
-    };
+/** Renda, potes e limites do cartão que valem no mês. */
+export interface MonthPlan {
+  incomes: Income[];
+  pots: Pot[];
+  card: CardPlan;
+}
 
-export interface Recurring extends RowMeta {
+/** Conta que se repete todo mês. */
+export interface Fixed {
+  id: Id;
   description: string;
   amount_cents: number;
   day: number;
   pot_id: Id;
   method: PaymentMethod;
-  override: RecurringOverride | null;
 }
 
-/** Foto de um mês fechado: o MonthView calculado no fechamento. Chave = mês. */
-export interface MonthSnapshot {
+/** Fixo como ficou no mês. edited = ajustado só naquele mês. */
+export interface MonthFixed extends Fixed {
+  edited?: true;
+}
+
+/** Compra lançada no mês. Parcelada, as próximas parcelas caem nos meses seguintes. */
+export interface Entry {
+  id: Id;
+  description: string;
+  total_cents: number;
+  purchase_date: DateKey;
+  pot_id: Id;
+  method: PaymentMethod;
+  installments: number;
+}
+
+export interface MonthRecord {
   month: MonthKey;
-  data: MonthView;
-  closed_at: Timestamp;
+  /** Quando o mês fechou. null = mês aberto (o atual). */
+  closed_at: Timestamp | null;
+  plan: MonthPlan;
+  fixed: MonthFixed[];
+  entries: Entry[];
+  /** Compras de meses anteriores cujas parcelas pararam a partir deste mês (cancelada, quitada). */
+  stopped_entries: Id[];
+}
+
+/** O que vale para todos os meses: os fixos que cada mês novo recebe. */
+export interface Global {
+  id: "global";
+  fixed: Fixed[];
 }
 
 // ---------- mês calculado ----------
@@ -106,6 +102,8 @@ export interface MonthLine {
   amount_cents: number;
   /** Fixo com ajuste neste mês. */
   edited?: boolean;
+  /** Só em compras: mês em que foi lançada. Só dá para editar no mês em que foi lançada. */
+  registered_month?: MonthKey;
   /** Só em compras: parcela deste mês, total de parcelas, valor total e data. */
   installment?: number;
   installments?: number;
@@ -189,7 +187,6 @@ export interface ForecastMonth {
 }
 
 export interface MonthView {
-  schema: 1;
   month: MonthKey;
   kind: MonthKind;
   editable: boolean;

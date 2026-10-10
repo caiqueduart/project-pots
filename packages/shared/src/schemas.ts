@@ -16,23 +16,9 @@ export const paymentMethodSchema = z.enum(["cartao", "debito"]);
 const installments = z.number().int().min(1).max(120);
 const day = z.number().int().min(1).max(31);
 
-export function isTimeZone(tz: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: tz });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 // ---------- formulários ----------
 
-export const settingsInputSchema = z.object({
-  personal_limit_cents: cents,
-  bank_limit_cents: cents,
-  warn_pct: z.number().int().min(1).max(100),
-  timezone: z.string().refine(isTimeZone, "Fuso horário inválido"),
-});
+export const cardPlanSchema = z.object({ personal_limit_cents: cents, bank_limit_cents: cents });
 
 export const incomeInputSchema = z.object({ name, amount_cents: cents });
 export const potInputSchema = z.object({ name, kind: potKindSchema, amount_cents: cents });
@@ -51,7 +37,7 @@ export const entryInputSchema = z
     path: ["installments"],
   });
 
-export const recurringInputSchema = z.object({
+export const fixedInputSchema = z.object({
   description: name,
   amount_cents: cents.min(1, "Informe o valor"),
   day,
@@ -59,73 +45,42 @@ export const recurringInputSchema = z.object({
   method: paymentMethodSchema,
 });
 
-// ---------- backup (as mesmas tabelas, num arquivo só) ----------
+// ---------- backup (o que está no navegador, num arquivo só) ----------
 
-const rowMeta = { id, created_at: timestamp, updated_at: timestamp, deleted_at: timestamp.nullable() };
+const fixedSchema = fixedInputSchema.extend({ id });
 
-const overrideSchema = z.union([
-  z.object({ month: monthKeySchema, skip: z.literal(true) }),
-  z.object({
-    month: monthKeySchema,
-    skip: z.literal(false).optional(),
-    description: name.optional(),
-    amount_cents: cents.optional(),
-    day: day.optional(),
-    pot_id: id.optional(),
-    method: paymentMethodSchema.optional(),
+export const monthRecordSchema = z.object({
+  month: monthKeySchema,
+  closed_at: timestamp.nullable(),
+  plan: z.object({
+    incomes: z.array(incomeInputSchema.extend({ id })),
+    pots: z.array(potInputSchema.extend({ id })),
+    card: cardPlanSchema,
   }),
-]);
-
-export const BACKUP_FORMAT = "pots" as const;
-export const BACKUP_SCHEMA = 1 as const;
-
-export const backupSchema = z.object({
-  format: z.literal(BACKUP_FORMAT),
-  schema: z.literal(BACKUP_SCHEMA),
-  exported_at: timestamp,
-  settings: z.object({
-    id: z.literal("settings"),
-    personal_limit_cents: cents,
-    bank_limit_cents: cents,
-    warn_pct: z.number().int().min(1).max(100),
-    timezone: z.string().refine(isTimeZone, "Fuso horário inválido"),
-    created_at: timestamp,
-    updated_at: timestamp,
-  }),
-  incomes: z.array(z.object({ ...rowMeta, name, amount_cents: cents })),
-  pots: z.array(
-    z.object({ ...rowMeta, name, kind: potKindSchema, amount_cents: cents, archived_at: timestamp.nullable() }),
-  ),
+  fixed: z.array(fixedSchema.extend({ edited: z.literal(true).optional() })),
   entries: z.array(
-    z.object({
-      ...rowMeta,
-      description: name,
-      total_cents: cents,
-      purchase_date: dateKeySchema,
-      registered_month: monthKeySchema,
-      pot_id: id,
-      method: paymentMethodSchema,
-      installments,
-    }),
+    z.object({ id, description: name, total_cents: cents, purchase_date: dateKeySchema, pot_id: id, method: paymentMethodSchema, installments }),
   ),
-  recurring: z.array(
-    z.object({
-      ...rowMeta,
-      description: name,
-      amount_cents: cents,
-      day,
-      pot_id: id,
-      method: paymentMethodSchema,
-      override: overrideSchema.nullable(),
-    }),
-  ),
-  // a foto é o resultado calculado; guardada como veio
-  month_snapshots: z.array(z.object({ month: monthKeySchema, data: z.any(), closed_at: timestamp })),
+  stopped_entries: z.array(id),
 });
 
-export type SettingsInput = z.infer<typeof settingsInputSchema>;
+export const BACKUP_FORMAT = "pots" as const;
+export const BACKUP_SCHEMA = 2 as const;
+
+export const backupSchema = z
+  .object({
+    format: z.literal(BACKUP_FORMAT),
+    schema: z.literal(BACKUP_SCHEMA),
+    exported_at: timestamp,
+    global: z.object({ fixed: z.array(fixedSchema) }),
+    months: z.array(monthRecordSchema).min(1, "O backup não tem nenhum mês"),
+  })
+  .refine((b) => new Set(b.months.map((m) => m.month)).size === b.months.length, { message: "Mês repetido no backup", path: ["months"] })
+  .refine((b) => b.months.filter((m) => !m.closed_at).length <= 1, { message: "Mais de um mês aberto no backup", path: ["months"] });
+
+export type CardPlanInput = z.infer<typeof cardPlanSchema>;
 export type IncomeInput = z.infer<typeof incomeInputSchema>;
 export type PotInput = z.infer<typeof potInputSchema>;
 export type EntryInput = z.infer<typeof entryInputSchema>;
-export type RecurringInput = z.infer<typeof recurringInputSchema>;
+export type FixedInput = z.infer<typeof fixedInputSchema>;
 export type Backup = z.infer<typeof backupSchema>;

@@ -1,13 +1,14 @@
+import type { Entry, MonthView } from "@pots/shared";
 import { describe, expect, it } from "vitest";
-import { computeMonth } from "./compute-month.ts";
-import { closeMonths, monthsToClose } from "./snapshots.ts";
+import { computeMonth as compute } from "./compute-month.ts";
 import { MORADIA, octoberData } from "./fixtures.ts";
-import type { UserData } from "./types.ts";
+import { newMonth, rollMonths } from "./months.ts";
+import type { PotsData } from "./types.ts";
 
-const atual = { kind: "atual" as const, currentMonth: "2026-10" };
+const computeMonth = (data: PotsData, month: string, current = "2026-10"): MonthView => compute(data, month, current)!;
 
 describe("computeMonth com o outubro real", () => {
-  const view = computeMonth(octoberData(), "2026-10", atual);
+  const view = computeMonth(octoberData(), "2026-10");
 
   it("bate com a planilha: gasto, disponível e fatura", () => {
     expect(view.totals.income_cents).toBe(350000);
@@ -58,59 +59,47 @@ describe("computeMonth com o outubro real", () => {
 
   it("marca o mês atual como editável", () => {
     expect(view.editable).toBe(true);
-    expect(computeMonth(octoberData(), "2026-12", { kind: "futuro", currentMonth: "2026-10" }).editable).toBe(false);
+    expect(computeMonth(octoberData(), "2026-12").editable).toBe(false);
   });
 });
 
 describe("fixos", () => {
-  it("o ajuste vale só para o mês dele", () => {
+  it("o ajuste do mês fica só no mês; a previsão usa o modelo global", () => {
     const data = octoberData();
-    data.recurring[0]!.override = { month: "2026-10", amount_cents: 30000 };
-    data.recurring[1]!.override = { month: "2026-10", skip: true };
-    const oct = computeMonth(data, "2026-10", atual);
-    const aluguel = oct.lines.find((l) => l.description === "Aluguel")!;
-    expect(aluguel).toMatchObject({ amount_cents: 30000, edited: true });
-    expect(oct.lines.find((l) => l.description === "Água, Luz, Internet")).toBeUndefined();
+    const oct = data.months[0]!;
+    oct.fixed[0] = { ...oct.fixed[0]!, amount_cents: 30000, pot_id: "pot-pessoal", method: "cartao", day: 20, edited: true };
+    oct.fixed.splice(1, 1); // "Água, Luz, Internet" pulado só em outubro
+    const view = computeMonth(data, "2026-10");
+    expect(view.lines.find((l) => l.description === "Aluguel")).toMatchObject({
+      amount_cents: 30000,
+      edited: true,
+      pot_id: "pot-pessoal",
+      date: "2026-10-20",
+    });
+    expect(view.lines.find((l) => l.description === "Água, Luz, Internet")).toBeUndefined();
+    expect(view.card.invoice_cents).toBe(63715 + 30000);
 
-    const nov = computeMonth(data, "2026-11", { kind: "futuro", currentMonth: "2026-10" });
+    const nov = computeMonth(data, "2026-11");
     expect(nov.lines.find((l) => l.description === "Aluguel")!.amount_cents).toBe(34500);
     expect(nov.lines.find((l) => l.description === "Água, Luz, Internet")).toBeDefined();
   });
 
-  it("o ajuste do mês pode mudar outros campos além do valor", () => {
-    const data = octoberData();
-    data.recurring[0]!.override = { month: "2026-10", pot_id: "pot-pessoal", method: "cartao", day: 20 };
-    const oct = computeMonth(data, "2026-10", atual);
-    expect(oct.lines.find((l) => l.description === "Aluguel")).toMatchObject({
-      pot_id: "pot-pessoal",
-      method: "cartao",
-      date: "2026-10-20",
-      amount_cents: 34500,
-    });
-    expect(oct.card.invoice_cents).toBe(63715 + 34500);
-  });
-
   it("dia 31 cai no último dia de meses curtos", () => {
     const data = octoberData();
-    data.recurring[0]!.day = 31;
-    const nov = computeMonth(data, "2026-11", { kind: "futuro", currentMonth: "2026-10" });
-    expect(nov.lines.find((l) => l.description === "Aluguel")!.date).toBe("2026-11-30");
+    data.global.fixed[0]!.day = 31;
+    expect(computeMonth(data, "2026-11").lines.find((l) => l.description === "Aluguel")!.date).toBe("2026-11-30");
   });
 });
 
 describe("compras com data passada", () => {
-  const withEntry = (e: Partial<UserData["entries"][number]>): UserData => {
+  const withEntry = (e: Partial<Entry>): PotsData => {
     const data = octoberData();
-    data.entries = [
+    data.months[0]!.entries = [
       {
         id: "x",
-        created_at: "",
-        updated_at: "",
-        deleted_at: null,
         description: "X",
         total_cents: 10000,
         purchase_date: "2026-09-20",
-        registered_month: "2026-10",
         pot_id: "pot-pessoal",
         method: "debito",
         installments: 1,
@@ -122,47 +111,79 @@ describe("compras com data passada", () => {
 
   it("compra à vista esquecida do mês fechado entra no mês atual", () => {
     for (const method of ["debito", "cartao"] as const) {
-      const view = computeMonth(withEntry({ method }), "2026-10", atual);
-      expect(view.lines.find((l) => l.id === "x")).toMatchObject({ amount_cents: 10000, installment: 1 });
+      const view = computeMonth(withEntry({ method }), "2026-10");
+      expect(view.lines.find((l) => l.id === "x")).toMatchObject({ amount_cents: 10000, installment: 1, registered_month: "2026-10" });
     }
   });
 
   it("parcelada antiga só define a parcela; parcelas de meses fechados ficam de fora", () => {
     const data = withEntry({ method: "cartao", installments: 3, total_cents: 10000, purchase_date: "2026-09-10" });
-    const sep = computeMonth(data, "2026-09", { kind: "passado", currentMonth: "2026-10" });
-    expect(sep.lines.find((l) => l.id === "x")).toBeUndefined();
-    const oct = computeMonth(data, "2026-10", atual);
-    expect(oct.lines.find((l) => l.id === "x")).toMatchObject({ installment: 2, amount_cents: 3333 });
-    const dec = computeMonth(data, "2026-11", { kind: "futuro", currentMonth: "2026-10" });
-    expect(dec.lines.find((l) => l.id === "x")).toMatchObject({ installment: 3, amount_cents: 3334 });
+    data.months.unshift({ ...newMonth("2026-09", undefined, data.global), closed_at: "2026-10-01T03:00:00.000Z" });
+    expect(computeMonth(data, "2026-09").lines.find((l) => l.id === "x")).toBeUndefined();
+    expect(computeMonth(data, "2026-10").lines.find((l) => l.id === "x")).toMatchObject({ installment: 2, amount_cents: 3333 });
+    expect(computeMonth(data, "2026-11").lines.find((l) => l.id === "x")).toMatchObject({ installment: 3, amount_cents: 3334 });
   });
 });
 
-describe("potes arquivados", () => {
-  it("somem do mês, a não ser que ainda tenham algo caindo nele", () => {
+describe("meses", () => {
+  /** Outubro fechado e novembro aberto, como depois da virada. */
+  const novData = (): PotsData => {
     const data = octoberData();
-    data.pots[0]!.archived_at = "2026-10-05T00:00:00.000Z";
-    data.recurring = data.recurring.filter((r) => r.pot_id !== MORADIA);
-    const view = computeMonth(data, "2026-10", atual);
-    expect(view.pots.map((p) => p.name)).toEqual(["Pessoal", "Investimentos"]);
+    const changed = rollMonths(data, "2026-11", new Date("2026-11-01T03:00:00Z"));
+    return { ...data, months: changed };
+  };
+
+  it("virar o mês fecha o anterior e abre o novo com o plano e os fixos copiados, sem compras", () => {
+    const data = octoberData();
+    const changed = rollMonths(data, "2027-01", new Date("2027-01-02T12:00:00Z"));
+    expect(changed.map((m) => [m.month, !!m.closed_at])).toEqual([
+      ["2026-10", true],
+      ["2026-11", true],
+      ["2026-12", true],
+      ["2027-01", false],
+    ]);
+    const jan = changed.at(-1)!;
+    expect(jan.plan).toEqual(data.months[0]!.plan);
+    expect(jan.fixed).toEqual(data.global.fixed);
+    expect(jan.entries).toEqual([]);
+    expect(rollMonths({ ...data, months: changed }, "2027-01", new Date())).toEqual([]);
+  });
+
+  it("primeiro uso cria o mês atual vazio", () => {
+    const [first] = rollMonths({ months: [], global: { id: "global", fixed: [] } }, "2026-10", new Date());
+    expect(first).toMatchObject({ month: "2026-10", closed_at: null, entries: [], plan: { incomes: [], pots: [] } });
+  });
+
+  it("mês fechado é recalculado com o que ficou guardado nele", () => {
+    const data = novData();
+    data.months[1]!.plan.incomes[0]!.amount_cents = 500000; // aumento só em novembro
+    const oct = computeMonth(data, "2026-10", "2026-11");
+    expect(oct).toMatchObject({ kind: "passado", editable: false, closed_at: "2026-11-01T03:00:00.000Z" });
+    expect(oct.totals.income_cents).toBe(350000);
+    expect(oct.totals.spent_cents).toBe(254895);
+    expect(computeMonth(data, "2026-11", "2026-11").totals.income_cents).toBe(500000);
+    expect(compute(data, "2026-09", "2026-11")).toBeNull();
+  });
+
+  it("parcelas paradas somem do mês em que pararam em diante, e o passado fica igual", () => {
+    const data = novData();
+    const monitor = data.months[0]!.entries.find((e) => e.description === "Monitor")!; // 9/10 em outubro
+    data.months[1]!.stopped_entries.push(monitor.id);
+    const oct = computeMonth(data, "2026-10", "2026-11");
+    expect(oct.lines.some((l) => l.description === "Monitor")).toBe(true);
+    expect(oct.installments_in_progress.find((i) => i.description === "Monitor")).toMatchObject({ is_last: true, remaining_cents: 0 });
+    expect(computeMonth(data, "2026-11", "2026-11").lines.some((l) => l.description === "Monitor")).toBe(false);
+  });
+
+  it("pote removido com parcelas caindo aparece como removido, com o nome antigo", () => {
+    const data = novData();
+    const nov = data.months[1]!;
+    nov.plan.pots = nov.plan.pots.filter((p) => p.id !== MORADIA);
+    nov.fixed = nov.fixed.filter((f) => f.pot_id !== MORADIA);
+    data.months[0]!.entries[0]!.pot_id = MORADIA; // Monitor (10/10 em novembro)
+    const view = computeMonth(data, "2026-11", "2026-11");
+    expect(view.pots.find((p) => p.name === "Moradia")).toMatchObject({ archived: true, used_cents: 5240 });
     expect(view.totals.budgeted_cents).toBe(250000);
-
-    data.entries[0]!.pot_id = MORADIA;
-    const again = computeMonth(data, "2026-10", atual);
-    expect(again.pots.find((p) => p.name === "Moradia")).toMatchObject({ archived: true, used_cents: 5240 });
-  });
-});
-
-describe("fotos dos meses", () => {
-  it("lista os meses que viraram sem foto", () => {
-    expect(monthsToClose("2026-10", null, "2026-10")).toEqual([]);
-    expect(monthsToClose("2026-10", null, "2026-11")).toEqual(["2026-10"]);
-    expect(monthsToClose("2026-10", "2026-10", "2027-01")).toEqual(["2026-11", "2026-12"]);
-  });
-
-  it("a foto é o mês calculado como passado", () => {
-    const [snap] = closeMonths(octoberData(), ["2026-10"], "2026-11", new Date("2026-11-01T03:00:00Z"));
-    expect(snap!.data).toMatchObject({ kind: "passado", editable: false, closed_at: "2026-11-01T03:00:00.000Z" });
-    expect(snap!.data.totals.spent_cents).toBe(254895);
+    expect(view.lines.find((l) => l.description === "Monitor")!.pot_name).toBe("Moradia");
   });
 });

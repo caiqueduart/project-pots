@@ -10,18 +10,11 @@ let store: Store;
 
 beforeEach(async () => {
   db = new PotsDB(`test-${crypto.randomUUID()}`);
-  // 08/out/2026 às 10h em São Paulo
+  // 08/out/2026 às 10h em Brasília
   clock = new Date("2026-10-08T13:00:00Z");
   store = new Store(db, () => clock);
-  await db.settings.put({
-    id: "settings",
-    personal_limit_cents: 100000,
-    bank_limit_cents: 500000,
-    warn_pct: 85,
-    timezone: "America/Sao_Paulo",
-    created_at: "2026-10-01T12:00:00.000Z",
-    updated_at: "2026-10-01T12:00:00.000Z",
-  });
+  await store.closePastMonths(); // abre outubro, como ao abrir o app
+  await store.updateCard({ personal_limit_cents: 100000, bank_limit_cents: 500000 });
 });
 
 async function seedOctober() {
@@ -52,9 +45,10 @@ async function seedOctober() {
 }
 
 const view = async (m: string) => (await store.monthView(m)) as MonthView;
+const october = async () => (await db.months.get("2026-10"))!;
 
 describe("mês atual", () => {
-  it("calcula o mês a partir das tabelas", async () => {
+  it("calcula o mês a partir do que está guardado nele", async () => {
     await seedOctober();
     const oct = await view("2026-10");
     expect(oct).toMatchObject({ kind: "atual", editable: true, current_month: "2026-10" });
@@ -63,16 +57,10 @@ describe("mês atual", () => {
     expect(oct.installments_in_progress[0]).toMatchObject({ description: "Monitor", installment: 9, installments: 10 });
   });
 
-  it("gera ids UUID e campos de controle em toda linha", async () => {
+  it("guarda só o que foi digitado, com ids UUID", async () => {
     const { pessoal } = await seedOctober();
     expect(pessoal.id).toMatch(/^[0-9a-f-]{36}$/);
-    expect(pessoal).toMatchObject({ deleted_at: null });
-    expect(pessoal.updated_at).toBe(pessoal.created_at);
-    // no mesmo instante, cada linha nova ganha um created_at maior (a ordem de criação se mantém)
-    const pots = await db.pots.toArray();
-    const stamps = pots.map((p) => p.created_at).sort();
-    expect(new Set(stamps).size).toBe(pots.length);
-    expect(stamps[0]! >= clock.toISOString()).toBe(true);
+    expect(pessoal).toEqual({ id: pessoal.id, name: "Pessoal", kind: "gasto", amount_cents: 150000 });
   });
 
   it("recusa compra com data futura e débito parcelado", async () => {
@@ -82,21 +70,29 @@ describe("mês atual", () => {
     await expect(store.addEntry({ ...base, purchase_date: "2026-10-01", method: "debito", installments: 3 })).rejects.toBeInstanceOf(PotsError);
   });
 
-  it("excluir marca deleted_at e some dos cálculos", async () => {
-    const { monitor } = await seedOctober();
-    await store.deleteEntry(monitor.id);
-    expect((await db.entries.get(monitor.id))!.deleted_at).toBe(clock.toISOString());
+  it("apagar no mês aberto tira de vez, sem deixar rastro", async () => {
+    const { monitor, income } = await seedOctober();
+    const extra = await store.addPot({ name: "Explorando", kind: "gasto", amount_cents: 0 });
+    await store.removePot(extra.id);
+    await store.deleteIncome(income.id);
+    expect(await store.deleteEntry(monitor.id)).toBe("excluida");
+    const oct = await october();
+    expect(oct.plan.pots.map((p) => p.name)).toEqual(["Moradia", "Pessoal", "Investimentos"]);
+    expect(oct.plan.incomes).toEqual([]);
+    expect(oct.entries.some((e) => e.id === monitor.id)).toBe(false);
+    expect(JSON.stringify(oct)).not.toContain("Explorando");
     expect((await view("2026-10")).installments_in_progress).toEqual([]);
   });
 
-  it("o futuro é previsão somente leitura", async () => {
+  it("o futuro é previsão somente leitura e não é guardado", async () => {
     await seedOctober();
     expect(await view("2026-11")).toMatchObject({ kind: "futuro", editable: false });
+    expect(await db.months.count()).toBe(1);
   });
 });
 
 describe("fixos", () => {
-  it("editar só este mês grava um ajuste e não muda o próximo", async () => {
+  it("editar só este mês muda o mês e não o próximo", async () => {
     const { aluguel, pessoal } = await seedOctober();
     await store.editRecurring(aluguel.id, { ...aluguel, amount_cents: 30000, pot_id: pessoal.id }, "mes");
     const oct = await view("2026-10");
@@ -105,11 +101,12 @@ describe("fixos", () => {
     expect(nov.lines.find((l) => l.description === "Aluguel")).toMatchObject({ amount_cents: 34500, pot_id: aluguel.pot_id });
   });
 
-  it("editar em diante muda o fixo e descarta o ajuste", async () => {
+  it("editar em diante muda o mês e o modelo", async () => {
     const { aluguel } = await seedOctober();
-    await store.deleteRecurring(aluguel.id, "mes");
+    await store.editRecurring(aluguel.id, { ...aluguel, amount_cents: 30000 }, "mes");
     await store.editRecurring(aluguel.id, { ...aluguel, amount_cents: 36000 }, "em_diante");
-    expect(await db.recurring.get(aluguel.id)).toMatchObject({ amount_cents: 36000, override: null });
+    expect((await october()).fixed.find((f) => f.id === aluguel.id)).toEqual({ ...aluguel, amount_cents: 36000 });
+    expect((await db.global.get("global"))!.fixed.find((f) => f.id === aluguel.id)!.amount_cents).toBe(36000);
   });
 
   it("excluir só este mês pula; em diante exclui", async () => {
@@ -117,26 +114,25 @@ describe("fixos", () => {
     await store.deleteRecurring(aluguel.id, "mes");
     expect((await view("2026-10")).lines.some((l) => l.description === "Aluguel")).toBe(false);
     expect((await view("2026-11")).lines.some((l) => l.description === "Aluguel")).toBe(true);
-    await store.deleteRecurring(aluguel.id, "em_diante");
-    expect((await view("2026-11")).lines.some((l) => l.description === "Aluguel")).toBe(false);
+    await expect(store.deleteRecurring(aluguel.id, "em_diante")).rejects.toThrow("não encontrado");
   });
 
-  it("pote com fixos não pode ser removido; sem fixos, arquiva", async () => {
+  it("pote com fixos não pode ser removido; sem fixos, sai do plano", async () => {
     const { moradia, aluguel } = await seedOctober();
-    await expect(store.archivePot(moradia.id)).rejects.toThrow("fixos");
+    await expect(store.removePot(moradia.id)).rejects.toThrow("fixos");
     await store.deleteRecurring(aluguel.id, "em_diante");
-    await store.archivePot(moradia.id);
+    await store.removePot(moradia.id);
     expect((await view("2026-10")).pots.map((p) => p.name)).toEqual(["Pessoal", "Investimentos"]);
   });
 });
 
 describe("virada do mês", () => {
-  it("congela o mês que passou antes da primeira gravação", async () => {
+  it("fecha o mês que passou e abre o novo com o plano e os fixos", async () => {
     const { aluguel, pessoal, income } = await seedOctober();
     await store.editRecurring(aluguel.id, { ...aluguel, amount_cents: 30000 }, "mes");
     const before = await view("2026-10");
 
-    clock = new Date("2026-11-01T03:30:00Z"); // 1º/nov, 00h30 em São Paulo
+    clock = new Date("2026-11-01T03:30:00Z"); // 1º/nov, 00h30 em Brasília
     await store.updateIncome(income.id, { amount_cents: 400000 });
     await store.addEntry({
       description: "Esquecida de outubro",
@@ -155,8 +151,20 @@ describe("virada do mês", () => {
     const nov = await view("2026-11");
     expect(nov).toMatchObject({ kind: "atual", editable: true });
     expect(nov.totals.income_cents).toBe(400000);
+    expect(nov.card.personal_limit_cents).toBe(100000);
     expect(nov.lines.find((l) => l.description === "Esquecida de outubro")!.amount_cents).toBe(9900);
-    expect(nov.lines.find((l) => l.description === "Aluguel")!.amount_cents).toBe(34500);
+    expect(nov.lines.find((l) => l.description === "Aluguel")).toMatchObject({ amount_cents: 34500 });
+    expect(nov.lines.find((l) => l.description === "Aluguel")!.edited).toBeUndefined();
+  });
+
+  it("compra de mês fechado: não edita; excluir para as parcelas a partir do mês atual", async () => {
+    const { monitor } = await seedOctober();
+    clock = new Date("2026-11-10T12:00:00Z");
+    await expect(store.updateEntry(monitor.id, { description: "Outro" })).rejects.toThrow("Só dá para editar");
+    expect(await store.deleteEntry(monitor.id)).toBe("parada");
+    expect((await view("2026-10")).lines.some((l) => l.description === "Monitor")).toBe(true);
+    expect((await view("2026-11")).lines.some((l) => l.description === "Monitor")).toBe(false);
+    expect((await db.months.get("2026-11"))!.stopped_entries).toEqual([monitor.id]);
   });
 
   it("fecha todos os meses sem acesso; antes do primeiro uso não há mês", async () => {
@@ -167,12 +175,11 @@ describe("virada do mês", () => {
     expect((await view("2026-12")).lines.some((l) => l.description === "Monitor")).toBe(false);
     expect(await store.monthView("2026-09")).toBeNull();
     expect(await store.closePastMonths()).toBe(0);
+    expect(await store.firstMonth()).toBe("2026-10");
   });
 
-  it("usa sempre o horário de Brasília para saber o mês atual", async () => {
+  it("usa sempre o horário de Brasília para saber o mês atual", () => {
     clock = new Date("2026-11-01T02:00:00Z"); // ainda 31/out às 23h em Brasília
-    expect(store.currentMonth()).toBe("2026-10");
-    await store.updateSettings({ timezone: "UTC" }); // backups antigos podem trazer outro fuso
     expect(store.currentMonth()).toBe("2026-10");
     clock = new Date("2026-11-01T03:00:00Z");
     expect(store.currentMonth()).toBe("2026-11");
@@ -180,12 +187,12 @@ describe("virada do mês", () => {
 });
 
 describe("backup", () => {
-  it("exporta as tabelas e importa num navegador vazio com o mesmo resultado", async () => {
-    const { monitor } = await seedOctober();
-    await store.deleteEntry(monitor.id);
+  it("exporta como está agora e importa num navegador vazio com o mesmo resultado", async () => {
+    await seedOctober();
     const backup = await exportBackup(db, clock);
-    expect(backup).toMatchObject({ format: "pots", schema: 1 });
-    expect(backup.entries).toHaveLength(2); // a excluída vai junto, marcada
+    expect(backup).toMatchObject({ format: "pots", schema: 2 });
+    expect(backup.months.map((m) => m.month)).toEqual(["2026-10"]);
+    expect(backup.global.fixed).toHaveLength(3);
     const text = JSON.stringify(backup);
 
     const other = new PotsDB(`test-${crypto.randomUUID()}`);

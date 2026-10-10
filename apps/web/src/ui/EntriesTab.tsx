@@ -42,6 +42,20 @@ export function EntriesTab({ month, tick, onNew, onEdit, onGoCurrent }: Props) {
       if (choice === "em_diante") await run(() => store.deleteRecurring(l.id, "em_diante"), `Fixo encerrado a partir de ${monthLabel(month)}`);
       return;
     }
+    if (l.registered_month !== month) {
+      const stop = await confirm({
+        title: "Parar parcelas",
+        message: (
+          <>
+            <strong>{l.description}</strong> foi lançada em {monthLabel(l.registered_month ?? month)}, que já fechou. As parcelas param a partir de{" "}
+            {monthLabel(month)}; as dos meses fechados continuam lá.
+          </>
+        ),
+        actions: [{ id: "ok", label: "Parar parcelas" }],
+      });
+      if (stop) await run(() => store.deleteEntry(l.id), `Parcelas paradas a partir de ${monthLabel(month)}`);
+      return;
+    }
     const parcelas = l.installments && l.installments > 1 ? ` Todas as ${l.installments} parcelas saem junto.` : "";
     const ok = await confirm({
       title: "Excluir compra",
@@ -56,13 +70,17 @@ export function EntriesTab({ month, tick, onNew, onEdit, onGoCurrent }: Props) {
 
   const actions = (l: MonthLine, cls: string) => {
     if (!view.editable) return null;
+    // compra de mês fechado não se edita: só dá para parar as parcelas
+    const old = l.source === "entry" && l.registered_month !== month;
     return (
       <div className={`row-actions ${cls}`}>
-        <button className="linkish small" onClick={() => onEdit({ kind: l.source === "recurring" ? "fixed" : "entry", line: l })}>
-          Editar
-        </button>
+        {!old && (
+          <button className="linkish small" onClick={() => onEdit({ kind: l.source === "recurring" ? "fixed" : "entry", line: l })}>
+            Editar
+          </button>
+        )}
         <button className="linkish small" style={{ color: "var(--crit)" }} onClick={() => void remove(l)}>
-          Excluir
+          {old ? "Parar parcelas" : "Excluir"}
         </button>
       </div>
     );

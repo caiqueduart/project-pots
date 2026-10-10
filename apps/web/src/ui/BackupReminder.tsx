@@ -7,7 +7,7 @@ import { downloadBackup, useLastBackup } from "./DataPanel.tsx";
 export function BackupReminder({ onOpen }: { onOpen: () => void }) {
   const { store, run } = useApp();
   const last = useLastBackup();
-  const hasData = useLiveQuery(async () => (await store.db.entries.count()) + (await store.db.recurring.count()) > 0, [store]);
+  const hasData = useLiveQuery(() => store.hasData(), [store]);
   const days = daysSince(last);
   if (!hasData || (days != null && days < BACKUP_REMINDER_DAYS)) return null;
   return (

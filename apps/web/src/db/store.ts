@@ -1,33 +1,22 @@
 // Todas as leituras e gravações do app. As telas só chamam estas funções e mostram o resultado.
+import { allEntries, computeMonth, emptyGlobal, entryInMonth, localDate, localMonth, rollMonths, type PotsData } from "@pots/core";
 import {
-  closeMonths,
-  computeMonth,
-  localDate,
-  localMonth,
-  monthsToClose,
-  TIME_ZONE,
-  type UserData,
-} from "@pots/core";
-import {
+  cardPlanSchema,
   entryInputSchema,
+  fixedInputSchema,
   incomeInputSchema,
   potInputSchema,
-  recurringInputSchema,
-  settingsInputSchema,
+  type CardPlanInput,
   type EntryInput,
+  type FixedInput,
+  type Global,
   type IncomeInput,
   type MonthKey,
+  type MonthRecord,
   type MonthView,
   type PotInput,
-  type Recurring,
-  type RecurringInput,
-  type RecurringOverride,
-  type RowMeta,
-  type Settings,
-  type SettingsInput,
 } from "@pots/shared";
 import type { ZodType } from "zod";
-import type { Table } from "dexie";
 import type { PotsDB } from "./db.ts";
 
 /** Erro mostrado para a pessoa (mensagem já em português). */
@@ -41,7 +30,19 @@ function parse<T>(schema: ZodType<T>, input: unknown): T {
   return r.data;
 }
 
-const alive = <T extends { deleted_at: string | null }>(rows: T[]) => rows.filter((r) => !r.deleted_at);
+function find<T extends { id: string }>(list: T[], id: string): T {
+  const item = list.find((x) => x.id === id);
+  if (!item) throw new PotsError("Registro não encontrado");
+  return item;
+}
+
+interface WriteCtx {
+  /** O mês aberto (o atual). As mudanças feitas nele e no global são gravadas no fim. */
+  month: MonthRecord;
+  global: Global;
+  current: MonthKey;
+  today: string;
+}
 
 export class Store {
   constructor(
@@ -49,38 +50,7 @@ export class Store {
     private readonly now: Clock = () => new Date(),
   ) {}
 
-  private lastCreated = 0;
-
-  private meta(): RowMeta {
-    // created_at estritamente crescente: a ordem da tela é a ordem de criação, mesmo no mesmo milissegundo
-    const ms = Math.max(this.now().getTime(), this.lastCreated + 1);
-    this.lastCreated = ms;
-    const t = new Date(ms).toISOString();
-    return { id: crypto.randomUUID(), created_at: t, updated_at: t, deleted_at: null };
-  }
-
-  private stamp() {
-    return { updated_at: this.now().toISOString() };
-  }
-
   // ---------- leitura ----------
-
-  async settings(): Promise<Settings> {
-    const s = await this.db.settings.get("settings");
-    if (s) return s;
-    const t = this.now().toISOString();
-    const fresh: Settings = {
-      id: "settings",
-      personal_limit_cents: 0,
-      bank_limit_cents: 0,
-      warn_pct: 85,
-      timezone: TIME_ZONE,
-      created_at: t,
-      updated_at: t,
-    };
-    await this.db.settings.put(fresh);
-    return fresh;
-  }
 
   /** Mês atual no horário de Brasília. */
   currentMonth(): MonthKey {
@@ -91,130 +61,125 @@ export class Store {
     return localDate(this.now());
   }
 
-  async userData(): Promise<UserData> {
-    const [settings, incomes, pots, entries, recurring] = await Promise.all([
-      this.settings(),
-      this.db.incomes.toArray(),
-      this.db.pots.toArray(),
-      this.db.entries.toArray(),
-      this.db.recurring.toArray(),
-    ]);
-    const byCreated = <T extends RowMeta>(a: T, b: T) => a.created_at.localeCompare(b.created_at);
-    return {
-      settings,
-      incomes: alive(incomes).sort(byCreated),
-      pots: alive(pots).sort(byCreated),
-      entries: alive(entries).sort(byCreated),
-      recurring: alive(recurring).sort(byCreated),
-    };
+  async data(): Promise<PotsData> {
+    const [months, global] = await Promise.all([this.db.months.orderBy("month").toArray(), this.db.global.get("global")]);
+    return { months, global: global ?? emptyGlobal() };
+  }
+
+  /** O mês aberto. undefined só antes da primeira virada (closePastMonths roda ao abrir o app). */
+  currentRecord(): Promise<MonthRecord | undefined> {
+    return this.db.months.get(this.currentMonth());
+  }
+
+  /** Primeiro mês de uso. Antes dele não há dados. */
+  async firstMonth(): Promise<MonthKey | null> {
+    return (await this.db.months.orderBy("month").first())?.month ?? null;
+  }
+
+  /** Há algo que valha um backup: compras ou fixos. */
+  async hasData(): Promise<boolean> {
+    const { months, global } = await this.data();
+    return global.fixed.length > 0 || months.some((m) => m.entries.length > 0);
   }
 
   /**
-   * O mês pronto para a tela. Passado: a foto (null se for antes do primeiro uso).
-   * Atual: calculado e editável. Futuro: previsão somente leitura.
+   * O mês pronto para a tela. Passado: recalculado com o que ficou guardado nele (null se for antes do
+   * primeiro uso). Atual: editável. Futuro: previsão somente leitura.
    */
   async monthView(month: MonthKey): Promise<MonthView | null> {
-    const current = this.currentMonth();
-    if (month < current) {
-      const snap = await this.db.month_snapshots.get(month);
-      return snap ? { ...snap.data, current_month: current } : null;
-    }
-    const data = await this.userData();
-    return computeMonth(data, month, { kind: month === current ? "atual" : "futuro", currentMonth: current });
+    return computeMonth(await this.data(), month, this.currentMonth());
   }
 
   // ---------- virada do mês ----------
 
   /**
-   * Fecha os meses que viraram: tira a foto antes de qualquer gravação. Roda ao abrir o app,
-   * quando ele volta a ficar visível e antes de cada gravação.
+   * Fecha os meses que viraram e abre o mês atual (copiando o plano e os fixos). Roda ao abrir o app,
+   * quando ele volta a ficar visível e antes de cada gravação. Devolve quantos meses fecharam.
    */
   async closePastMonths(): Promise<number> {
-    return this.db.transaction("rw", [this.db.settings, this.db.incomes, this.db.pots, this.db.entries, this.db.recurring, this.db.month_snapshots], async () => {
-      const settings = await this.settings();
-      const current = this.currentMonth();
-      const last = await this.db.month_snapshots.orderBy("month").last();
-      const months = monthsToClose(localMonth(new Date(settings.created_at)), last?.month ?? null, current);
-      if (!months.length) return 0;
-      const snaps = closeMonths(await this.userData(), months, current, this.now());
-      await this.db.month_snapshots.bulkPut(snaps);
-      return snaps.length;
+    return this.db.transaction("rw", [this.db.months, this.db.global], async () => {
+      const changed = rollMonths(await this.data(), this.currentMonth(), this.now());
+      if (changed.length) await this.db.months.bulkPut(changed);
+      return changed.filter((m) => m.closed_at).length;
     });
   }
 
-  /** Toda gravação passa por aqui: fecha os meses que viraram e grava numa transação. */
-  private async write<T>(fn: (ctx: { settings: Settings; current: MonthKey; today: string }) => Promise<T>): Promise<T> {
+  /** Toda gravação passa por aqui: vira o mês se preciso e grava o mês aberto e o global numa transação. */
+  private async write<T>(fn: (ctx: WriteCtx) => T | Promise<T>): Promise<T> {
     await this.closePastMonths();
-    return this.db.transaction("rw", [this.db.settings, this.db.incomes, this.db.pots, this.db.entries, this.db.recurring], async () => {
-      const settings = await this.settings();
-      return fn({ settings, current: this.currentMonth(), today: this.today() });
+    return this.db.transaction("rw", [this.db.months, this.db.global], async () => {
+      const current = this.currentMonth();
+      const month = await this.db.months.get(current);
+      if (!month) throw new PotsError("O mês atual não está aberto. Recarregue a página.");
+      const global = (await this.db.global.get("global")) ?? emptyGlobal();
+      const result = await fn({ month, global, current, today: this.today() });
+      await this.db.months.put(month);
+      await this.db.global.put(global);
+      return result;
     });
   }
 
-  // ---------- configurações ----------
+  // ---------- cartão (plano do mês) ----------
 
-  updateSettings(input: Partial<SettingsInput>) {
-    return this.write(async ({ settings }) => {
-      const next = parse(settingsInputSchema, {
-        personal_limit_cents: settings.personal_limit_cents,
-        bank_limit_cents: settings.bank_limit_cents,
-        warn_pct: settings.warn_pct,
-        timezone: settings.timezone,
-        ...input,
-      });
-      await this.db.settings.update("settings", { ...next, ...this.stamp() });
+  updateCard(input: Partial<CardPlanInput>) {
+    return this.write(({ month }) => {
+      month.plan.card = parse(cardPlanSchema, { ...month.plan.card, ...input });
     });
   }
 
   // ---------- renda ----------
 
   addIncome(input: IncomeInput) {
-    return this.write(async () => {
-      const row = { ...this.meta(), ...parse(incomeInputSchema, input) };
-      await this.db.incomes.add(row);
+    return this.write(({ month }) => {
+      const row = { id: crypto.randomUUID(), ...parse(incomeInputSchema, input) };
+      month.plan.incomes.push(row);
       return row;
     });
   }
 
   updateIncome(id: string, input: Partial<IncomeInput>) {
-    return this.write(async () => {
-      const cur = await this.alive(this.db.incomes, id);
-      await this.db.incomes.update(id, { ...parse(incomeInputSchema, { ...cur, ...input }), ...this.stamp() });
+    return this.write(({ month }) => {
+      const cur = find(month.plan.incomes, id);
+      Object.assign(cur, parse(incomeInputSchema, { ...cur, ...input }));
     });
   }
 
   deleteIncome(id: string) {
-    return this.write(async () => {
-      await this.alive(this.db.incomes, id);
-      await this.db.incomes.update(id, { deleted_at: this.now().toISOString(), ...this.stamp() });
+    return this.write(({ month }) => {
+      find(month.plan.incomes, id);
+      month.plan.incomes = month.plan.incomes.filter((i) => i.id !== id);
     });
   }
 
   // ---------- potes ----------
 
   addPot(input: PotInput) {
-    return this.write(async () => {
-      const row = { ...this.meta(), ...parse(potInputSchema, input), archived_at: null };
-      await this.db.pots.add(row);
+    return this.write(({ month }) => {
+      const row = { id: crypto.randomUUID(), ...parse(potInputSchema, input) };
+      month.plan.pots.push(row);
       return row;
     });
   }
 
   updatePot(id: string, input: Partial<PotInput>) {
-    return this.write(async () => {
-      const cur = await this.activePot(id);
-      await this.db.pots.update(id, { ...parse(potInputSchema, { ...cur, ...input }), ...this.stamp() });
+    return this.write(({ month }) => {
+      const cur = find(month.plan.pots, id);
+      Object.assign(cur, parse(potInputSchema, { ...cur, ...input }));
     });
   }
 
-  /** Remover um pote arquiva: compras antigas e meses fechados continuam apontando para ele. */
-  archivePot(id: string) {
-    return this.write(async () => {
-      await this.activePot(id);
-      const fixed = alive(await this.db.recurring.toArray()).filter((r) => r.pot_id === id);
-      if (fixed.length) throw new PotsError("Esse pote tem fixos. Mova ou exclua os fixos antes de remover o pote.");
-      await this.db.pots.update(id, { archived_at: this.now().toISOString(), ...this.stamp() });
+  /** Tira o pote do plano. Meses fechados e parcelas antigas continuam com ele (o nome fica guardado neles). */
+  removePot(id: string) {
+    return this.write(({ month, global }) => {
+      find(month.plan.pots, id);
+      if ([...month.fixed, ...global.fixed].some((f) => f.pot_id === id))
+        throw new PotsError("Esse pote tem fixos. Mova ou exclua os fixos antes de remover o pote.");
+      month.plan.pots = month.plan.pots.filter((p) => p.id !== id);
     });
+  }
+
+  private checkPot(month: MonthRecord, id: string) {
+    if (!month.plan.pots.some((p) => p.id === id)) throw new PotsError("Pote não encontrado");
   }
 
   // ---------- compras ----------
@@ -226,89 +191,85 @@ export class Store {
   }
 
   addEntry(input: EntryInput) {
-    return this.write(async ({ current, today }) => {
+    return this.write(({ month, today }) => {
       const e = this.checkEntry(input, today);
-      await this.activePot(e.pot_id);
-      const row = { ...this.meta(), ...e, registered_month: current };
-      await this.db.entries.add(row);
+      this.checkPot(month, e.pot_id);
+      const row = { id: crypto.randomUUID(), ...e };
+      month.entries.push(row);
       return row;
     });
   }
 
+  /** Só compras lançadas no mês atual podem ser editadas: as de meses fechados não mudam. */
   updateEntry(id: string, input: Partial<EntryInput>) {
-    return this.write(async ({ today }) => {
-      const cur = await this.alive(this.db.entries, id);
+    return this.write(({ month, today }) => {
+      const cur = month.entries.find((e) => e.id === id);
+      if (!cur) throw new PotsError("Só dá para editar compras lançadas neste mês. Exclua (as parcelas param) e lance de novo.");
       const e = this.checkEntry({ ...cur, ...input }, today);
-      if (e.pot_id !== cur.pot_id) await this.activePot(e.pot_id);
-      await this.db.entries.update(id, { ...e, ...this.stamp() });
+      if (e.pot_id !== cur.pot_id) this.checkPot(month, e.pot_id);
+      Object.assign(cur, e);
     });
   }
 
-  deleteEntry(id: string) {
-    return this.write(async () => {
-      await this.alive(this.db.entries, id);
-      await this.db.entries.update(id, { deleted_at: this.now().toISOString(), ...this.stamp() });
+  /**
+   * Compra lançada neste mês: sai de vez. Compra de um mês fechado: as parcelas param a partir deste mês
+   * e os meses fechados ficam como estavam.
+   */
+  deleteEntry(id: string): Promise<"excluida" | "parada"> {
+    return this.write(async ({ month, current }) => {
+      if (month.entries.some((e) => e.id === id)) {
+        month.entries = month.entries.filter((e) => e.id !== id);
+        return "excluida";
+      }
+      const old = allEntries((await this.data()).months).find((e) => e.id === id && e.registered_month < current);
+      if (!old || !entryInMonth(old, current)) throw new PotsError("Registro não encontrado");
+      month.stopped_entries.push(id);
+      return "parada";
     });
   }
 
   // ---------- fixos ----------
 
-  addRecurring(input: RecurringInput) {
-    return this.write(async () => {
-      const r = parse(recurringInputSchema, input);
-      await this.activePot(r.pot_id);
-      const row: Recurring = { ...this.meta(), ...r, override: null };
-      await this.db.recurring.add(row);
+  /** Fixo novo: entra no mês atual e no modelo dos próximos meses. */
+  addRecurring(input: FixedInput) {
+    return this.write(({ month, global }) => {
+      const f = parse(fixedInputSchema, input);
+      this.checkPot(month, f.pot_id);
+      const row = { id: crypto.randomUUID(), ...f };
+      month.fixed.push({ ...row });
+      global.fixed.push(row);
       return row;
     });
   }
 
   /**
    * Editar um fixo:
-   * - "mes": vale só para o mês atual (vira um ajuste do mês);
-   * - "em_diante": muda o fixo do mês atual em diante e descarta o ajuste do mês.
+   * - "mes": vale só para o mês atual (o fixo do mês fica marcado como ajustado);
+   * - "em_diante": muda o fixo do mês atual e o modelo dos próximos meses.
    */
-  editRecurring(id: string, input: RecurringInput, scope: "mes" | "em_diante") {
-    return this.write(async ({ current }) => {
-      const cur = await this.alive(this.db.recurring, id);
-      const r = parse(recurringInputSchema, input);
-      if (r.pot_id !== cur.pot_id) await this.activePot(r.pot_id);
-      if (scope === "em_diante") {
-        await this.db.recurring.update(id, { ...r, override: null, ...this.stamp() });
+  editRecurring(id: string, input: FixedInput, scope: "mes" | "em_diante") {
+    return this.write(({ month, global }) => {
+      const cur = find(month.fixed, id);
+      const f = parse(fixedInputSchema, input);
+      if (f.pot_id !== cur.pot_id) this.checkPot(month, f.pot_id);
+      const i = month.fixed.indexOf(cur);
+      if (scope === "mes") {
+        month.fixed[i] = { id, ...f, edited: true };
         return;
       }
-      const changes: Partial<RecurringInput> = {};
-      for (const k of ["description", "amount_cents", "day", "pot_id", "method"] as const) {
-        if (r[k] !== cur[k]) (changes as Record<string, unknown>)[k] = r[k];
-      }
-      const override: RecurringOverride | null = Object.keys(changes).length ? { month: current, ...changes } : null;
-      await this.db.recurring.update(id, { override, ...this.stamp() });
+      month.fixed[i] = { id, ...f };
+      const g = global.fixed.findIndex((x) => x.id === id);
+      if (g >= 0) global.fixed[g] = { id, ...f };
+      else global.fixed.push({ id, ...f });
     });
   }
 
-  /** "mes" pula só o mês atual; "em_diante" exclui o fixo. Os meses fechados não mudam. */
+  /** "mes" tira só do mês atual; "em_diante" tira também dos próximos. Os meses fechados não mudam. */
   deleteRecurring(id: string, scope: "mes" | "em_diante") {
-    return this.write(async ({ current }) => {
-      await this.alive(this.db.recurring, id);
-      const patch =
-        scope === "mes"
-          ? { override: { month: current, skip: true } as RecurringOverride }
-          : { deleted_at: this.now().toISOString() };
-      await this.db.recurring.update(id, { ...patch, ...this.stamp() });
+    return this.write(({ month, global }) => {
+      find(month.fixed, id);
+      month.fixed = month.fixed.filter((f) => f.id !== id);
+      if (scope === "em_diante") global.fixed = global.fixed.filter((f) => f.id !== id);
     });
-  }
-
-  // ---------- auxiliares ----------
-
-  private async alive<T extends RowMeta>(table: Table<T, string>, id: string): Promise<T> {
-    const row = await table.get(id);
-    if (!row || row.deleted_at) throw new PotsError("Registro não encontrado");
-    return row;
-  }
-
-  private async activePot(id: string) {
-    const pot = await this.db.pots.get(id);
-    if (!pot || pot.deleted_at || pot.archived_at) throw new PotsError("Pote não encontrado");
-    return pot;
   }
 }

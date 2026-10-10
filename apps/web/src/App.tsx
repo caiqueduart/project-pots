@@ -1,6 +1,5 @@
 import { localMonth } from "@pots/core";
 import { addMonths, type MonthKey } from "@pots/shared";
-import { useLiveQuery } from "dexie-react-hooks";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PotsError, type Store } from "./db/store.ts";
 import { AppContext, type AppCtx } from "./ui/app-context.ts";
@@ -20,7 +19,6 @@ const TABS: [Tab, string][] = [
 ];
 
 export function App({ store }: { store: Store }) {
-  const settings = useLiveQuery(() => store.db.settings.get("settings"), [store]);
   // muda quando o app volta a ficar visível: o mês atual pode ter virado
   const [tick, setTick] = useState(0);
   const [selected, setSelected] = useState<MonthKey | null>(null);
@@ -40,9 +38,9 @@ export function App({ store }: { store: Store }) {
   }, [store]);
 
   const current = useMemo(
-    () => (settings ? localMonth(new Date()) : null),
+    () => localMonth(new Date()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [settings, tick],
+    [tick],
   );
   const month = selected ?? current;
 
@@ -85,7 +83,6 @@ export function App({ store }: { store: Store }) {
     document.body.style.overflow = modal || ask ? "hidden" : "";
   }, [modal, ask]);
 
-  if (!settings || !current || !month) return null;
 
   const goMonth = (m: MonthKey) => {
     setSelected(m === current ? null : m);

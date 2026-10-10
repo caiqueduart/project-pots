@@ -9,69 +9,31 @@ import {
   type MonthPot,
   type MonthView,
   type PaymentMethod,
-  type Recurring,
 } from "@pots/shared";
 import { entryInMonth, entrySchedule, remainingAfter } from "./installments.ts";
+import { monthInput, WARN_PCT } from "./months.ts";
 import { limitStatus, pct, potStatus } from "./status.ts";
-import type { UserData } from "./types.ts";
-
-export const SNAPSHOT_SCHEMA = 1 as const;
+import type { MonthInput, PotsData } from "./types.ts";
 
 /** Quantos meses a previsão mostra depois do mês visto. */
 export const FORECAST_MONTHS = 6;
 
-export interface RecurringInstance {
-  description: string;
-  amount_cents: number;
-  day: number;
-  pot_id: Id;
-  method: PaymentMethod;
-  edited: boolean;
-}
-
-/** Como o fixo fica no mês, aplicando o ajuste só quando ele é daquele mês. null = pulado. */
-export function recurringInMonth(rec: Recurring, month: MonthKey): RecurringInstance | null {
-  const base = {
-    description: rec.description,
-    amount_cents: rec.amount_cents,
-    day: rec.day,
-    pot_id: rec.pot_id,
-    method: rec.method,
-  };
-  const o = rec.override;
-  if (!o || o.month !== month) return { ...base, edited: false };
-  if (o.skip) return null;
-  return {
-    description: o.description ?? base.description,
-    amount_cents: o.amount_cents ?? base.amount_cents,
-    day: o.day ?? base.day,
-    pot_id: o.pot_id ?? base.pot_id,
-    method: o.method ?? base.method,
-    edited: true,
-  };
-}
-
 /** Todas as linhas que caem no mês: fixos primeiro (pelo dia), depois compras (pela data). */
-export function linesInMonth(data: UserData, month: MonthKey): MonthLine[] {
-  const potName = new Map(data.pots.map((p) => [p.id, p.name]));
-  const fixed: MonthLine[] = [];
-  for (const rec of data.recurring) {
-    const inst = recurringInMonth(rec, month);
-    if (!inst) continue;
-    fixed.push({
-      source: "recurring",
-      id: rec.id,
-      description: inst.description,
-      date: dateInMonth(month, inst.day),
-      pot_id: inst.pot_id,
-      pot_name: potName.get(inst.pot_id) ?? "",
-      method: inst.method,
-      amount_cents: inst.amount_cents,
-      ...(inst.edited ? { edited: true } : {}),
-    });
-  }
+export function linesInMonth(input: MonthInput, month: MonthKey): MonthLine[] {
+  const potName = (id: Id) => input.pots.get(id)?.name ?? "";
+  const fixed: MonthLine[] = input.fixed.map((f) => ({
+    source: "recurring",
+    id: f.id,
+    description: f.description,
+    date: dateInMonth(month, f.day),
+    pot_id: f.pot_id,
+    pot_name: potName(f.pot_id),
+    method: f.method,
+    amount_cents: f.amount_cents,
+    ...(f.edited ? { edited: true } : {}),
+  }));
   const purchases: MonthLine[] = [];
-  for (const e of data.entries) {
+  for (const e of input.entries) {
     const inst = entryInMonth(e, month);
     if (!inst) continue;
     purchases.push({
@@ -80,13 +42,14 @@ export function linesInMonth(data: UserData, month: MonthKey): MonthLine[] {
       description: e.description,
       date: e.purchase_date,
       pot_id: e.pot_id,
-      pot_name: potName.get(e.pot_id) ?? "",
+      pot_name: potName(e.pot_id),
       method: e.method,
       amount_cents: inst.amount_cents,
       installment: inst.installment,
       installments: e.installments,
       total_cents: e.total_cents,
       purchase_date: e.purchase_date,
+      registered_month: e.registered_month,
     });
   }
   const byDate = (a: MonthLine, b: MonthLine) =>
@@ -98,16 +61,18 @@ function sumBy(lines: MonthLine[], method: PaymentMethod): number {
   return lines.reduce((s, l) => (l.method === method ? s + l.amount_cents : s), 0);
 }
 
-function incomeTotal(data: UserData): number {
-  return data.incomes.reduce((s, i) => s + i.amount_cents, 0);
+function incomeTotal(input: MonthInput): number {
+  return input.plan.incomes.reduce((s, i) => s + i.amount_cents, 0);
 }
 
-export function forecast(data: UserData, after: MonthKey, months = FORECAST_MONTHS): ForecastMonth[] {
-  const income = incomeTotal(data);
+export function forecast(data: PotsData, after: MonthKey, current: MonthKey, months = FORECAST_MONTHS): ForecastMonth[] {
   const out: ForecastMonth[] = [];
   for (let i = 1; i <= months; i++) {
     const month = addMonths(after, i);
-    const lines = linesInMonth(data, month);
+    const input = monthInput(data, month, current);
+    if (!input) continue;
+    const income = incomeTotal(input);
+    const lines = linesInMonth(input, month);
     const cartao = sumBy(lines, "cartao");
     const debito = sumBy(lines, "debito");
     const total = cartao + debito;
@@ -124,51 +89,50 @@ export function forecast(data: UserData, after: MonthKey, months = FORECAST_MONT
   return out;
 }
 
-export interface ComputeOptions {
-  kind: MonthView["kind"];
-  currentMonth: MonthKey;
-  closedAt?: string | null;
-}
-
 /**
- * Calcula o mês inteiro a partir dos dados brutos. É a mesma função para o mês atual, para a
- * previsão de meses futuros e para a foto tirada quando um mês fecha. As telas só mostram o resultado.
+ * Calcula o mês inteiro a partir do que está guardado. É a mesma função para o mês atual, para os meses
+ * fechados (recalculados com o que ficou guardado neles) e para a previsão. As telas só mostram o resultado.
+ * null = mês antes do primeiro uso.
  */
-export function computeMonth(data: UserData, month: MonthKey, opts: ComputeOptions): MonthView {
-  const { settings } = data;
-  const warn = settings.warn_pct;
-  const lines = linesInMonth(data, month);
+export function computeMonth(data: PotsData, month: MonthKey, current: MonthKey): MonthView | null {
+  const input = monthInput(data, month, current);
+  if (!input) return null;
+  const kind: MonthView["kind"] = month < current ? "passado" : month === current ? "atual" : "futuro";
+  const record = data.months.find((m) => m.month === month);
+  const card = input.plan.card;
+  const warn = WARN_PCT;
+  const lines = linesInMonth(input, month);
 
   const used = new Map<Id, number>();
   for (const l of lines) used.set(l.pot_id, (used.get(l.pot_id) ?? 0) + l.amount_cents);
 
-  // potes arquivados só aparecem se ainda têm algo caindo no mês (ex.: parcelas em andamento)
-  const pots: MonthPot[] = data.pots
-    .filter((p) => !p.archived_at || (used.get(p.id) ?? 0) > 0)
-    .map((p) => {
-      const u = used.get(p.id) ?? 0;
-      return {
-        id: p.id,
-        name: p.name,
-        kind: p.kind,
-        budget_cents: p.amount_cents,
-        used_cents: u,
-        remaining_cents: p.amount_cents - u,
-        pct: pct(u, p.amount_cents),
-        status: potStatus(p.kind, u, p.amount_cents, warn),
-        archived: !!p.archived_at,
-      };
-    });
+  // potes removidos só aparecem se ainda têm algo caindo no mês (ex.: parcelas em andamento)
+  const inPlan = new Set(input.plan.pots.map((p) => p.id));
+  const removed = [...used.keys()].filter((id) => !inPlan.has(id)).flatMap((id) => input.pots.get(id) ?? []);
+  const pots: MonthPot[] = [...input.plan.pots, ...removed].map((p) => {
+    const u = used.get(p.id) ?? 0;
+    return {
+      id: p.id,
+      name: p.name,
+      kind: p.kind,
+      budget_cents: p.amount_cents,
+      used_cents: u,
+      remaining_cents: p.amount_cents - u,
+      pct: pct(u, p.amount_cents),
+      status: potStatus(p.kind, u, p.amount_cents, warn),
+      archived: !inPlan.has(p.id),
+    };
+  });
 
-  const income = incomeTotal(data);
-  const budgeted = data.pots.filter((p) => !p.archived_at).reduce((s, p) => s + p.amount_cents, 0);
+  const income = incomeTotal(input);
+  const budgeted = input.plan.pots.reduce((s, p) => s + p.amount_cents, 0);
   const cartao = sumBy(lines, "cartao");
   const debito = sumBy(lines, "debito");
   const spent = cartao + debito;
   const fixed = lines.filter((l) => l.source === "recurring").reduce((s, l) => s + l.amount_cents, 0);
 
   const cardLines = lines.filter((l) => l.method === "cartao");
-  const cardFuture = data.entries
+  const cardFuture = input.entries
     .filter((e) => e.method === "cartao")
     .reduce((s, e) => {
       // parcelas depois deste mês, sem contar as de meses anteriores ao lançamento
@@ -178,7 +142,7 @@ export function computeMonth(data: UserData, month: MonthKey, opts: ComputeOptio
     }, 0);
 
   const installments: InstallmentInProgress[] = [];
-  for (const e of data.entries) {
+  for (const e of input.entries) {
     if (e.method !== "cartao" || e.installments <= 1) continue;
     const inst = entryInMonth(e, month);
     if (!inst) continue;
@@ -193,24 +157,23 @@ export function computeMonth(data: UserData, month: MonthKey, opts: ComputeOptio
       remaining_cents: remainingAfter(e, month),
       first_month: sched.first_month,
       last_month: sched.last_month,
-      is_last: inst.installment === e.installments,
+      is_last: sched.last_month === month,
     });
   }
   installments.sort((a, b) => a.last_month.localeCompare(b.last_month) || a.description.localeCompare(b.description, "pt-BR"));
 
   return {
-    schema: SNAPSHOT_SCHEMA,
     month,
-    kind: opts.kind,
-    editable: opts.kind === "atual",
-    current_month: opts.currentMonth,
-    closed_at: opts.closedAt ?? null,
+    kind,
+    editable: kind === "atual",
+    current_month: current,
+    closed_at: kind === "passado" ? (record?.closed_at ?? null) : null,
     settings: {
-      personal_limit_cents: settings.personal_limit_cents,
-      bank_limit_cents: settings.bank_limit_cents,
+      personal_limit_cents: card.personal_limit_cents,
+      bank_limit_cents: card.bank_limit_cents,
       warn_pct: warn,
     },
-    incomes: data.incomes.map((i) => ({ id: i.id, name: i.name, amount_cents: i.amount_cents })),
+    incomes: input.plan.incomes.map((i) => ({ id: i.id, name: i.name, amount_cents: i.amount_cents })),
     pots,
     lines,
     totals: {
@@ -226,12 +189,12 @@ export function computeMonth(data: UserData, month: MonthKey, opts: ComputeOptio
       by_method: { cartao, debito },
     },
     card: {
-      personal_limit_cents: settings.personal_limit_cents,
-      bank_limit_cents: settings.bank_limit_cents,
+      personal_limit_cents: card.personal_limit_cents,
+      bank_limit_cents: card.bank_limit_cents,
       invoice_cents: cartao,
-      remaining_cents: settings.personal_limit_cents - cartao,
-      personal_limit_used_pct: pct(cartao, settings.personal_limit_cents),
-      status: limitStatus(cartao, settings.personal_limit_cents, warn),
+      remaining_cents: card.personal_limit_cents - cartao,
+      personal_limit_used_pct: pct(cartao, card.personal_limit_cents),
+      status: limitStatus(cartao, card.personal_limit_cents, warn),
       committed_cents: cartao + cardFuture,
       items: cardLines.map((l) => ({
         source: l.source,
@@ -242,6 +205,6 @@ export function computeMonth(data: UserData, month: MonthKey, opts: ComputeOptio
       })),
     },
     installments_in_progress: installments,
-    forecast: forecast(data, month),
+    forecast: forecast(data, month, current),
   };
 }
