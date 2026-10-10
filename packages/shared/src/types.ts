@@ -150,8 +150,13 @@ export interface CardItem {
 export interface MonthCard {
   personal_limit_cents: number;
   bank_limit_cents: number;
-  /** Fatura mínima: soma do que foi registrado no cartão neste mês. */
+  /** Fatura deste mês: soma do que foi comprado no cartão neste mês. É paga no mês seguinte. */
   invoice_cents: number;
+  /**
+   * Fatura do mês anterior, que sai da conta neste mês. Só um lembrete: essas compras já contaram nos
+   * potes do mês em que foram feitas. null = antes do primeiro uso.
+   */
+  previous_invoice_cents: number | null;
   /** Quanto ainda cabe no limite pessoal (negativo se passou). */
   remaining_cents: number;
   personal_limit_used_pct: number | null;

@@ -132,6 +132,10 @@ export function computeMonth(data: PotsData, month: MonthKey, current: MonthKey)
   const fixed = lines.filter((l) => l.source === "recurring").reduce((s, l) => s + l.amount_cents, 0);
 
   const cardLines = lines.filter((l) => l.method === "cartao");
+  // a fatura do mês anterior é paga neste mês: lembrete do que sai da conta, não um gasto novo
+  const prevMonth = addMonths(month, -1);
+  const prevInput = monthInput(data, prevMonth, current);
+  const previousInvoice = prevInput ? sumBy(linesInMonth(prevInput, prevMonth), "cartao") : null;
   const cardFuture = input.entries
     .filter((e) => e.method === "cartao")
     .reduce((s, e) => {
@@ -192,6 +196,7 @@ export function computeMonth(data: PotsData, month: MonthKey, current: MonthKey)
       personal_limit_cents: card.personal_limit_cents,
       bank_limit_cents: card.bank_limit_cents,
       invoice_cents: cartao,
+      previous_invoice_cents: previousInvoice,
       remaining_cents: card.personal_limit_cents - cartao,
       personal_limit_used_pct: pct(cartao, card.personal_limit_cents),
       status: limitStatus(cartao, card.personal_limit_cents, warn),

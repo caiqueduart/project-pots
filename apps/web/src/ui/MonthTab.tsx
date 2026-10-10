@@ -1,4 +1,4 @@
-import type { LimitStatus, MonthKey, MonthPot, MonthView } from '@pots/shared';
+import { addMonths, type LimitStatus, type MonthKey, type MonthPot, type MonthView } from '@pots/shared';
 import { useState } from 'react';
 import { fmt, monthName, monthShort } from './format.ts';
 import { useMonthView } from './hooks.ts';
@@ -204,6 +204,15 @@ function CardPanel({ view }: { view: MonthView }) {
         c.status === 'estourou' ? 'Acima do limite' : c.status === 'aviso' ? 'Perto do limite' : 'Dentro do limite';
     const chip = c.status === 'estourou' ? 'crit' : c.status === 'aviso' ? 'warn' : 'ok';
     const n = c.items.length;
+    const prev = monthName(addMonths(view.month, -1));
+    const next = monthName(addMonths(view.month, 1));
+    // a compra no cartão já conta no pote do mês em que foi feita; a fatura só lembra o que sai da conta
+    const title =
+        view.kind === 'atual'
+            ? `Fatura de ${monthName(view.month)}, acumulando`
+            : view.kind === 'futuro'
+              ? `Previsão da fatura de ${monthName(view.month)}`
+              : `Fatura de ${monthName(view.month)}`;
     return (
         <div className="panel">
             <div className="panel-head">
@@ -213,10 +222,23 @@ function CardPanel({ view }: { view: MonthView }) {
                     {c.bank_limit_cents ? ` · banco ${fmt(c.bank_limit_cents)}` : ''}
                 </span>
             </div>
+            {c.previous_invoice_cents ? (
+                <div className="card-due">
+                    <div className="card-due-row">
+                        <span>
+                            Fatura de {prev}, paga em {monthName(view.month)}
+                        </span>
+                        <strong className="num">{fmt(c.previous_invoice_cents)}</strong>
+                    </div>
+                    <span className="small muted">
+                        Sai da conta, não dos potes: essas compras já contaram em {prev}.
+                    </span>
+                </div>
+            ) : null}
             <div className="card-face">
                 <div className="card-top">
                     <span className="small" style={{ color: 'var(--fg-2)' }}>
-                        Fatura mínima de {monthName(view.month)}{' '}
+                        {title}{' '}
                         <span className="muted">
                             ({n} {n === 1 ? 'item' : 'itens'})
                         </span>
@@ -224,6 +246,10 @@ function CardPanel({ view }: { view: MonthView }) {
                     <span className={`chip ${chip}`}>{label}</span>
                 </div>
                 <div className="card-big">{fmt(c.invoice_cents)}</div>
+                <div className="small muted">
+                    {view.kind === 'passado' ? 'Paga' : 'Cobra'} em {next}. Essas compras contam nos potes de{' '}
+                    {monthName(view.month)}.
+                </div>
                 <div className="limit-meter" role="img" aria-label={`Fatura ${fmt(c.invoice_cents)} de ${fmt(L)}`}>
                     <span className="reg" style={{ width: `${w}%` }} />
                 </div>

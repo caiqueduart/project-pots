@@ -120,6 +120,9 @@ h3 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacin
 .chip.crit { background: var(--crit-soft); color: var(--crit); }
 
 .card-face { border-radius: var(--radius); padding: 16px; background: var(--tint); display: flex; flex-direction: column; gap: 10px; }
+.card-due { border: 1px dashed var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.card-due-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 14px; color: var(--fg-2); }
+.card-due-row strong { color: var(--fg); font-size: 16px; }
 .card-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .card-big { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 28px; font-weight: 500; line-height: 1.1; }
 .limit-meter { position: relative; height: 14px; border-radius: 4px; background: var(--track); overflow: hidden; }

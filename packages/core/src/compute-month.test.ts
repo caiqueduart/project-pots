@@ -175,6 +175,15 @@ describe("meses", () => {
     expect(computeMonth(data, "2026-11", "2026-11").lines.some((l) => l.description === "Monitor")).toBe(false);
   });
 
+  it("a fatura do mês anterior aparece como lembrete e não entra no gasto nem nos potes", () => {
+    const data = novData();
+    expect(computeMonth(data, "2026-10", "2026-11").card.previous_invoice_cents).toBeNull(); // setembro: antes do primeiro uso
+    const nov = computeMonth(data, "2026-11", "2026-11");
+    expect(nov.card.previous_invoice_cents).toBe(63715); // fatura de outubro, paga em novembro
+    expect(nov.totals.spent_cents).toBe(nov.totals.by_method.cartao + nov.totals.by_method.debito);
+    expect(nov.pots.reduce((s, p) => s + p.used_cents, 0)).toBe(nov.totals.spent_cents);
+  });
+
   it("pote removido com parcelas caindo aparece como removido, com o nome antigo", () => {
     const data = novData();
     const nov = data.months[1]!;
