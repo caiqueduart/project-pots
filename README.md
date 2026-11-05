@@ -2,6 +2,8 @@
 
 Divida sua renda em potes, controle o limite do cartão e saiba em que parcela está cada compra.
 
+Estpou ensinando git pro Thiago
+
 O Pots é um site estático: não tem servidor, banco na nuvem nem login. Tudo fica salvo no navegador de quem usa (IndexedDB), como o Excalidraw. Para levar os dados para outro aparelho, ou guardar uma cópia, baixe o backup em **Configurar → Seus dados**.
 
 ## Como funciona
@@ -11,7 +13,7 @@ O Pots é um site estático: não tem servidor, banco na nuvem nem login. Tudo f
 - **Meses futuros**: previsão somente leitura, com o plano do mês atual, os fixos e as parcelas já registrados. Nada é guardado.
 - **Cartão**: sem dia de fechamento ou vencimento. A compra cai na fatura do mês em que foi feita; parcelas seguem mês a mês. Uma compra antiga lançada agora só conta as parcelas a partir do mês atual.
 - **Pagamento**: Cartão ou Débito (débito cobre pix, dinheiro e débito). Só cartão parcela.
-- **Potes**: de *gasto* (o valor é um teto; avisa a partir de 85%) ou de *meta* (o valor é um objetivo).
+- **Potes**: de _gasto_ (o valor é um teto; avisa a partir de 85%) ou de _meta_ (o valor é um objetivo).
 - **Fixos**: editar ou excluir vale "só este mês" ou "deste mês em diante".
 - **Compras de meses fechados**: não se editam. Excluir uma delas para as parcelas a partir do mês atual; os meses fechados ficam como estavam.
 - **Horário**: sempre o de Brasília, que define quando o dia e o mês viram.
